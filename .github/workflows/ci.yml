@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    name: Build (MSYS2 MINGW64)
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+
+    steps:
+      - name: Checkout (with submodules)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up MSYS2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            git
+            make
+            mingw-w64-x86_64-toolchain
+            mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-ninja
+            mingw-w64-x86_64-libelf
+            mingw-w64-x86_64-avr-gcc
+            mingw-w64-x86_64-avr-libc
+
+      - name: Build simavr
+        run: make -C external/simavr/simavr RELEASE=1
+
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build aneb-sim
+        run: cmake --build build
+
+      - name: Verify binary exists
+        run: test -x build/aneb-sim/aneb-sim.exe
