@@ -24,8 +24,13 @@ int test_rx_status_idle(void)
 
 int test_rts_sets_txreq(void)
 {
+    /* Verify the register-level SIDE EFFECTS of RTS — that the bottom 3
+     * bits of the command byte select which TXBnCTRL.TXREQ bits get set.
+     * Stay in Configuration mode (the reset default) so the request
+     * stays pending — in NORMAL mode, deliver_normal would immediately
+     * clear TXREQ as the transmission completes (covered by separate
+     * tests in the can_bus suite). */
     mcp2515_t m; mcp2515_init(&m, "t");
-    set_mode_normal(&m);
 
     /* RTS for TXB1 only. */
     spi_rts(&m, 0x02);
