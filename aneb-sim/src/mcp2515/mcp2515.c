@@ -139,11 +139,11 @@ static void apply_reg_write(mcp2515_t *m, uint8_t addr, uint8_t value)
             if (m->mode == MCP_MODE_LOOPBACK) {
                 deliver_loopback(m, n);
             } else if (m->mode == MCP_MODE_NORMAL) {
-                /* M3: forward to bus model via on_tx callback. For M2 the
-                 * frame simply stays pending until the bus is online. */
-                /* Mark transmission complete on best-effort basis to avoid
-                 * stalling firmware that polls TXREQ in absence of a bus. */
+                deliver_normal(m, n);
             }
+            /* Listen-only / Sleep / Config: TXREQ stays pending, no
+             * transmission. Firmware's polling will see TXREQ remain set
+             * until the mode changes, which matches real hardware. */
         }
         return;
     }
@@ -455,33 +455,51 @@ bool mcp2515_rx_frame(mcp2515_t *m, const mcp2515_frame_t *frame)
     return route_inbound(m, frame);
 }
 
-/* ----- Loopback delivery ------------------------------------------- */
+/* ----- TX delivery (loopback / normal) ----------------------------- */
+
+/* Read a frame out of TXBn into *out. */
+static void extract_tx_frame(const mcp2515_t *m, int txbuf, mcp2515_frame_t *out)
+{
+    int base = txbuf_base(txbuf);
+    uint32_t id; bool ext;
+    unpack_id(&m->regs[base + 1], &id, &ext);
+    out->id  = id;
+    out->ext = ext;
+    out->dlc = m->regs[base + 5] & MCP_DLC_DLC_MASK;
+    out->rtr = (m->regs[base + 5] & MCP_DLC_RTR) != 0;
+    for (int i = 0; i < 8; i++) {
+        out->data[i] = m->regs[base + 6 + i];
+    }
+}
+
+/* TXREQ clears + TXnIF sets to indicate "transmission complete". */
+static void mark_tx_complete(mcp2515_t *m, int txbuf)
+{
+    static const uint8_t txif[3] = { MCP_INT_TX0IF, MCP_INT_TX1IF, MCP_INT_TX2IF };
+    int base = txbuf_base(txbuf);
+    m->regs[base] &= ~MCP_TXBCTRL_TXREQ;
+    m->regs[MCP_CANINTF] |= txif[txbuf];
+}
 
 static void deliver_loopback(mcp2515_t *m, int txbuf)
 {
-    int base = txbuf_base(txbuf);
-
-    /* Read frame out of TXB. */
     mcp2515_frame_t f;
-    uint32_t id; bool ext;
-    unpack_id(&m->regs[base + 1], &id, &ext);
-    f.id  = id;
-    f.ext = ext;
-    f.dlc = m->regs[base + 5] & MCP_DLC_DLC_MASK;
-    f.rtr = (m->regs[base + 5] & MCP_DLC_RTR) != 0;
-    for (int i = 0; i < 8; i++) {
-        f.data[i] = m->regs[base + 6 + i];
-    }
-
-    /* TXREQ clears, TXnIF flag sets to indicate "transmission complete". */
-    m->regs[base] &= ~MCP_TXBCTRL_TXREQ;
-    static const uint8_t txif[3] = { MCP_INT_TX0IF, MCP_INT_TX1IF, MCP_INT_TX2IF };
-    m->regs[MCP_CANINTF] |= txif[txbuf];
-
-    /* Loopback: feed back into RX path. */
-    route_inbound(m, &f);
-
+    extract_tx_frame(m, txbuf, &f);
+    mark_tx_complete(m, txbuf);
+    route_inbound(m, &f);              /* loopback: TXBn -> filters -> RXBn */
     update_int_pin(m);
+}
+
+static void deliver_normal(mcp2515_t *m, int txbuf)
+{
+    mcp2515_frame_t f;
+    extract_tx_frame(m, txbuf, &f);
+    mark_tx_complete(m, txbuf);
+    update_int_pin(m);
+    /* Hand off to the bus model (sim_loop's glue), which fans out to
+     * peer controllers via mcp2515_rx_frame. NULL is safe — the model
+     * works standalone before a bus is wired (e.g. unit tests). */
+    if (m->on_tx) m->on_tx(m->ctx, &f);
 }
 
 /* ----- Status / RX-status command bytes ----------------------------- */
