@@ -52,6 +52,24 @@ extern int test_bus_filter_end_to_end(void);
 extern int test_bus_mode_gating(void);
 extern int test_bus_normal_tx_through_callback(void);
 
+/* mcp2515 errors suite */
+extern int test_initial_state_active(void);
+extern int test_inject_tx_error_increments_tec(void);
+extern int test_inject_rx_error_increments_rec(void);
+extern int test_warning_threshold_eflg(void);
+extern int test_passive_threshold_via_tec(void);
+extern int test_passive_threshold_via_rec(void);
+extern int test_busoff_threshold(void);
+extern int test_force_busoff_helper(void);
+extern int test_force_error_passive_helper(void);
+extern int test_busoff_disables_tx(void);
+extern int test_busoff_disables_rx(void);
+extern int test_recover_via_helper(void);
+extern int test_recover_via_canctrl_mode_change(void);
+extern int test_successful_tx_decrements_tec(void);
+extern int test_successful_rx_decrements_rec(void);
+extern int test_eflg_overflow_sticky_on_state_update(void);
+
 int main(void)
 {
     TEST_BEGIN();
@@ -101,6 +119,25 @@ int main(void)
     TEST_RUN(test_bus_filter_end_to_end);
     TEST_RUN(test_bus_mode_gating);
     TEST_RUN(test_bus_normal_tx_through_callback);
+    fputc('\n', stderr);
+
+    fputs("errors      ", stderr);
+    TEST_RUN(test_initial_state_active);
+    TEST_RUN(test_inject_tx_error_increments_tec);
+    TEST_RUN(test_inject_rx_error_increments_rec);
+    TEST_RUN(test_warning_threshold_eflg);
+    TEST_RUN(test_passive_threshold_via_tec);
+    TEST_RUN(test_passive_threshold_via_rec);
+    TEST_RUN(test_busoff_threshold);
+    TEST_RUN(test_force_busoff_helper);
+    TEST_RUN(test_force_error_passive_helper);
+    TEST_RUN(test_busoff_disables_tx);
+    TEST_RUN(test_busoff_disables_rx);
+    TEST_RUN(test_recover_via_helper);
+    TEST_RUN(test_recover_via_canctrl_mode_change);
+    TEST_RUN(test_successful_tx_decrements_tec);
+    TEST_RUN(test_successful_rx_decrements_rec);
+    TEST_RUN(test_eflg_overflow_sticky_on_state_update);
     fputc('\n', stderr);
 
     return TEST_END();

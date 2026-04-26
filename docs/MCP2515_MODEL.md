@@ -1,7 +1,8 @@
 # MCP2515 model fidelity
 
-> *Status: M2 complete (loopback-only). M3 adds bus interaction.
-> M4 adds error counters, error frames, and bus-off transitions.*
+> *Status: M2 + M3 + M4 complete (loopback, multi-node bus, and
+> bus-off / error frames). Bit-timing fidelity is the remaining
+> deferral, not currently planned for v1.*
 
 The model is implemented as a pure-logic module under
 [`aneb-sim/src/mcp2515/`](../aneb-sim/src/mcp2515/) with no `simavr`
@@ -37,18 +38,39 @@ Tests link the pure module directly without simavr; see
   INT pin.
 - Interrupt enable/flag wiring (CANINTE × CANINTF → INT pin).
 
-## Deferred to M3 (CAN bus model)
+## Implemented (M3)
 
-- `on_tx` callback delivers TX'd frames to a shared bus model.
-- Bus arbitration (lower ID wins) and inter-frame spacing.
+- Multi-node single-bus fan-out via `aneb-sim/src/can_bus/`.
+- `on_tx` callback wired in NORMAL mode delivers frames to peer
+  controllers; `mcp2515_rx_frame` filters and routes inbound.
+- Frame counters on the bus (broadcast / delivered / injected).
+- External injection via `can_bus_inject` (no source skipped) — used
+  by the UI / scenario player and the `can_inject` JSON command.
 
-## Deferred to M4 (errors)
+## Implemented (M4)
 
-- TEC / REC counters
-- EFLG bits and error-frame propagation
-- Mode transitions error-active → error-passive → bus-off
-- ERRIF / MERRF flags
-- Bus-off recovery (128 × 11 recessive bits or mode toggle)
+- TEC / REC counters with auto-decrement on successful TX/RX.
+- EFLG bit derivation: EWARN, RXWAR, TXWAR, RXEP, TXEP, TXBO, with
+  RX0OVR / RX1OVR sticky across recomputations.
+- Error states: error-active → error-passive (TEC ≥ 128 || REC ≥ 128)
+  → bus-off (TEC ≥ 256, modeled via the saturated value 255).
+- ERRIF + MERRF flag handling; INT pin re-evaluates after every
+  error event.
+- Bus-off TX gating (TXREQ stays pending) and RX gating (no inbound
+  frames accepted while bus-off).
+- Bus-off recovery via firmware-driven CANCTRL mode toggle (clears
+  TEC / REC / TXBO automatically).
+- Pedagogical helpers: `mcp2515_inject_tx_errors`,
+  `mcp2515_inject_rx_errors`, `mcp2515_force_busoff`,
+  `mcp2515_force_error_passive`, `mcp2515_recover_busoff`.
+
+## Out of scope (v1, may add later if a lab requires)
+
+The 128 × 11 recessive-bit auto-recovery requires per-bit time
+modeling, which we do not do (frame delivery is logical, not
+bit-timed). The firmware-driven recovery path (mode toggle through
+Configuration) is fully supported and is the path drivers like
+`MCP_CAN_lib` use anyway.
 
 ## Out of scope (v1, may add later if a lab requires)
 

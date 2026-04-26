@@ -77,6 +77,7 @@ add_executable(test_mcp2515
     test/test_mcp2515_spi.c
     test/test_mcp2515_filters.c
     test/test_mcp2515_loopback.c
+    test/test_mcp2515_errors.c
     test/test_can_bus.c
 )
 target_include_directories(test_mcp2515 PRIVATE
