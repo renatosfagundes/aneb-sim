@@ -1,7 +1,11 @@
-// LcdWidget.qml — 16x2 character LCD per chip.
+// LcdWidget.qml — 16x2 character LCD per chip (HD44780-style).
 //
 // Driven from `bridge.lcdLines[chip]` which is populated by the bridge
 // when it sees `__LCD__<row>:<col>:<text>\n` lines in any chip's UART.
+//
+// Visually mimics a classic 1602 module: dark plastic bezel, deep
+// blue glass with a bright cyan glow, and pixelated white characters
+// in monospace.
 //
 // Firmware example:
 //     Serial.println("__LCD__0:0:Hello, World!");
@@ -15,90 +19,126 @@ Item {
     implicitWidth:  208
     implicitHeight: 44
 
-    // ---- Helper -------------------------------------------------
     function lineFor(row) {
         if (!bridge || !bridge.lcdLines) return ""
         var chipLines = bridge.lcdLines[root.chip]
         if (!chipLines || chipLines.length <= row) return ""
         var s = chipLines[row]
-        // Pad to 16 chars so the cursor position stays visible.
         while (s.length < 16) s += " "
         return s.substring(0, 16)
     }
 
-    // ---- Bezel (the LCD module's plastic border) ---------------
+    // ---- Bezel — the LCD module's plastic frame ----------------
     Rectangle {
         anchors.fill: parent
         radius: 4
         gradient: Gradient {
-            GradientStop { position: 0.0; color: "#384a40" }
-            GradientStop { position: 1.0; color: "#1a2820" }
+            GradientStop { position: 0.0; color: "#1a1f2a" }
+            GradientStop { position: 1.0; color: "#0a0d14" }
         }
-        border.color: "#0a0f0c"; border.width: 1
+        border.color: "#000"; border.width: 1
     }
 
-    // ---- The actual LCD glass ----------------------------------
+    // Tiny mounting-hole accents at the corners — sells the
+    // "physical module" look without taking real space.
+    Repeater {
+        model: [
+            { x: 0.02, y: 0.10 },
+            { x: 0.98, y: 0.10 },
+            { x: 0.02, y: 0.90 },
+            { x: 0.98, y: 0.90 }
+        ]
+        Rectangle {
+            x: root.width  * modelData.x - 2
+            y: root.height * modelData.y - 2
+            width: 4; height: 4
+            radius: 2
+            color: "#04060a"
+            border.color: "#3a4256"; border.width: 1
+        }
+    }
+
+    // ---- LCD glass --------------------------------------------
     Rectangle {
         id: glass
         anchors.fill: parent
-        anchors.margins: 4
-        radius: 2
+        anchors.margins: 5
+        anchors.leftMargin:  10
+        anchors.rightMargin: 10
+        radius: 1
         gradient: Gradient {
-            GradientStop { position: 0.0; color: "#0e3826" }
-            GradientStop { position: 1.0; color: "#072115" }
+            GradientStop { position: 0.0; color: "#2a4ec8" }
+            GradientStop { position: 1.0; color: "#1230a0" }
         }
         border.color: "#000"; border.width: 1
 
-        // Subtle scanlines for an LCD feel.
+        // Soft cyan top-edge glow — backlight bleed.
+        Rectangle {
+            anchors.top: parent.top
+            anchors.left: parent.left
+            anchors.right: parent.right
+            height: parent.height * 0.35
+            gradient: Gradient {
+                GradientStop { position: 0.0; color: Qt.rgba(0.55, 0.75, 1.0, 0.25) }
+                GradientStop { position: 1.0; color: Qt.rgba(0.55, 0.75, 1.0, 0.0) }
+            }
+        }
+
+        // Faint dot-matrix grid behind the text — a hint of the
+        // 5x8 pixel cell structure without modeling each dot.
         Repeater {
-            model: 8
+            model: 16
             Rectangle {
-                width: parent.width; height: 1
-                y: index * (parent.height / 8) + 1
-                color: "#0a3020"
-                opacity: 0.18
+                width: 1
+                height: parent.height
+                x: (index + 1) * (parent.width / 17)
+                color: "#000"; opacity: 0.08
             }
         }
 
         Column {
             anchors.fill: parent
-            anchors.margins: 3
+            anchors.leftMargin: 5
+            anchors.rightMargin: 5
+            anchors.topMargin: 2
             spacing: 0
 
             Text {
                 text: root.lineFor(0)
-                color: "#7fff7f"
+                color: "#ffffff"
                 font.family: "Consolas"
-                font.pixelSize: 13
+                font.pixelSize: Math.max(10, glass.height * 0.40)
                 font.bold: true
-                font.letterSpacing: 1.2
+                font.letterSpacing: 1.5
                 width: parent.width
                 horizontalAlignment: Text.AlignLeft
-                Behavior on text { PropertyAnimation { duration: 0 } }
+                style: Text.Raised
+                styleColor: Qt.rgba(0.7, 0.85, 1.0, 0.4)
             }
             Text {
                 text: root.lineFor(1)
-                color: "#7fff7f"
+                color: "#ffffff"
                 font.family: "Consolas"
-                font.pixelSize: 13
+                font.pixelSize: Math.max(10, glass.height * 0.40)
                 font.bold: true
-                font.letterSpacing: 1.2
+                font.letterSpacing: 1.5
                 width: parent.width
                 horizontalAlignment: Text.AlignLeft
+                style: Text.Raised
+                styleColor: Qt.rgba(0.7, 0.85, 1.0, 0.4)
             }
         }
 
-        // Soft glow over the text.
+        // Subtle vignette to add depth around the edges.
         Rectangle {
             anchors.fill: parent
-            color: "#7fff7f"
-            opacity: 0.04
-            radius: parent.radius
+            color: "transparent"
+            border.color: Qt.rgba(0, 0, 0, 0.4)
+            border.width: 1
         }
     }
 
-    // Faint label below the bezel — "LCD 16x2" — so it's obvious what
-    // this widget is even before any text appears.
+    // Faint label below the bezel.
     Text {
         anchors.bottom: parent.bottom
         anchors.bottomMargin: -10

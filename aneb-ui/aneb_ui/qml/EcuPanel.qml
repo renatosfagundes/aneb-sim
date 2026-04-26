@@ -81,7 +81,7 @@ Item {
             chip: root.chip
             power: bridge && bridge.engineRunning
             Layout.fillWidth: true
-            Layout.preferredHeight: Math.min(width / (1500.0 / 571.0), 180)
+            Layout.preferredHeight: Math.min(width / (1500.0 / 571.0), 150)
             Layout.minimumHeight: 80
         }
 
