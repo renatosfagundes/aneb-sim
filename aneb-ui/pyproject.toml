@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aneb-ui"
+version = "0.1.0"
+description = "PyQt6 UI for the ANEB v1.1 simulator engine"
+requires-python = ">=3.11"
+readme = "README.md"
+authors = [{ name = "Renato Silva Fagundes" }]
+license = { text = "TBD" }
+
+# Runtime dependencies. Pinned with a permissive minor-version range so a
+# pip install on a fresh student machine grabs the latest patch.
+dependencies = [
+    "PyQt6 >= 6.6, < 7",
+]
+
+[project.scripts]
+aneb-ui = "aneb_ui.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["aneb_ui*"]
