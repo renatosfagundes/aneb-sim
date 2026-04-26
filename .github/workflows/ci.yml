@@ -44,5 +44,9 @@ jobs:
       - name: Build aneb-sim
         run: cmake --build build
 
-      - name: Verify binary exists
+      - name: Verify engine binary exists
         run: test -x build/aneb-sim/aneb-sim.exe
+
+      - name: Run unit tests (mcp2515)
+        working-directory: build
+        run: ctest --output-on-failure --no-tests=error
