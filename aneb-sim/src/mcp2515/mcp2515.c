@@ -22,10 +22,11 @@
 
 /* ----- forward decls -------------------------------------------------- */
 
-static void deliver_loopback(mcp2515_t *m, int txbuf);
-static void deliver_normal  (mcp2515_t *m, int txbuf);
-static bool route_inbound   (mcp2515_t *m, const mcp2515_frame_t *f);
-static void update_int_pin  (mcp2515_t *m);
+static void deliver_loopback   (mcp2515_t *m, int txbuf);
+static void deliver_normal     (mcp2515_t *m, int txbuf);
+static bool route_inbound      (mcp2515_t *m, const mcp2515_frame_t *f);
+static void update_int_pin     (mcp2515_t *m);
+static void update_error_state (mcp2515_t *m);
 
 /* ----- helpers ------------------------------------------------------- */
 
@@ -91,12 +92,24 @@ static void apply_reg_write(mcp2515_t *m, uint8_t addr, uint8_t value)
 {
     /* CANCTRL: writing REQOP requests a mode change. We treat the request
      * as instantaneous (no real bit timing); the equivalent OPMOD bits in
-     * CANSTAT update synchronously. */
+     * CANSTAT update synchronously.
+     *
+     * Bus-off recovery path: real hardware leaves bus-off after 128
+     * occurrences of 11 consecutive recessive bits (we don't model
+     * bit-time) OR a mode transition through Configuration. Firmware
+     * uses the latter, so we honor it here — if the controller was
+     * in bus-off when the mode change is requested, clear TEC/REC. */
     if (addr == MCP_CANCTRL) {
         uint8_t req = (value & MCP_CANCTRL_REQOP_MASK) >> MCP_CANCTRL_REQOP_SHIFT;
+        bool was_busoff = (m->regs[MCP_EFLG] & MCP_EFLG_TXBO) != 0;
         m->regs[MCP_CANCTRL] = value;
         if (req <= MCP_MODE_CONFIG) {
             set_mode(m, (int)req);
+        }
+        if (was_busoff) {
+            m->regs[MCP_TEC] = 0;
+            m->regs[MCP_REC] = 0;
+            update_error_state(m);
         }
         return;
     }
@@ -137,7 +150,12 @@ static void apply_reg_write(mcp2515_t *m, uint8_t addr, uint8_t value)
         m->regs[addr] = value;
         if (!was_req && new_req) {
             int n = (addr - MCP_TXB0CTRL) / 0x10;
-            if (m->mode == MCP_MODE_LOOPBACK) {
+            bool busoff = (m->regs[MCP_EFLG] & MCP_EFLG_TXBO) != 0;
+            if (busoff) {
+                /* Bus-off: TX gated. TXREQ stays pending; firmware sees
+                 * the request not complete until it recovers via mode
+                 * transition. Matches datasheet section 6.5 behavior. */
+            } else if (m->mode == MCP_MODE_LOOPBACK) {
                 deliver_loopback(m, n);
             } else if (m->mode == MCP_MODE_NORMAL) {
                 deliver_normal(m, n);
@@ -453,7 +471,18 @@ bool mcp2515_rx_frame(mcp2515_t *m, const mcp2515_frame_t *frame)
     if (m->mode == MCP_MODE_SLEEP || m->mode == MCP_MODE_CONFIG) {
         return false;
     }
-    return route_inbound(m, frame);
+    /* Bus-off: controller is offline, no RX either (datasheet 6.5). */
+    if (m->regs[MCP_EFLG] & MCP_EFLG_TXBO) {
+        return false;
+    }
+    bool accepted = route_inbound(m, frame);
+
+    /* Successful reception decrements REC (datasheet 6.2). */
+    if (accepted && m->regs[MCP_REC] > 0) {
+        m->regs[MCP_REC]--;
+        update_error_state(m);
+    }
+    return accepted;
 }
 
 /* ----- TX delivery (loopback / normal) ----------------------------- */
@@ -487,6 +516,14 @@ static void deliver_loopback(mcp2515_t *m, int txbuf)
     mcp2515_frame_t f;
     extract_tx_frame(m, txbuf, &f);
     mark_tx_complete(m, txbuf);
+
+    /* Successful transmission decrements TEC, even in loopback. From the
+     * firmware's perspective the TX completed; symmetric with deliver_normal. */
+    if (m->regs[MCP_TEC] > 0) {
+        m->regs[MCP_TEC]--;
+        update_error_state(m);
+    }
+
     route_inbound(m, &f);              /* loopback: TXBn -> filters -> RXBn */
     update_int_pin(m);
 }
@@ -496,6 +533,13 @@ static void deliver_normal(mcp2515_t *m, int txbuf)
     mcp2515_frame_t f;
     extract_tx_frame(m, txbuf, &f);
     mark_tx_complete(m, txbuf);
+
+    /* Successful transmission decrements TEC (datasheet 6.2). */
+    if (m->regs[MCP_TEC] > 0) {
+        m->regs[MCP_TEC]--;
+        update_error_state(m);
+    }
+
     update_int_pin(m);
     /* Hand off to the bus model (sim_loop's glue), which fans out to
      * peer controllers via mcp2515_rx_frame. NULL is safe — the model
@@ -727,4 +771,114 @@ uint8_t mcp2515_spi_byte(mcp2515_t *m, uint8_t in)
 int mcp2515_get_mode(const mcp2515_t *m)
 {
     return m->mode;
+}
+
+/* ----- Error counters / EFLG / bus-off (M4) -------------------------- *
+ *
+ * The error state is fully derived from TEC and REC. update_error_state
+ * recomputes EFLG bits (preserving the sticky overflow bits, which are
+ * cleared only by firmware) and adjusts the bus-off flag accordingly.
+ *
+ * Datasheet thresholds (section 6.2):
+ *   EWARN  = TEC >= 96 || REC >= 96
+ *   TXWAR  = TEC >= 96
+ *   RXWAR  = REC >= 96
+ *   TXEP   = TEC >= 128
+ *   RXEP   = REC >= 128
+ *   TXBO   = TEC >= 256
+ */
+static void update_error_state(mcp2515_t *m)
+{
+    uint8_t tec = m->regs[MCP_TEC];
+    uint8_t rec = m->regs[MCP_REC];
+
+    /* Preserve overflow bits (RX0OVR / RX1OVR are sticky until firmware
+     * clears them via BIT MODIFY). */
+    uint8_t sticky = m->regs[MCP_EFLG] & (MCP_EFLG_RX0OVR | MCP_EFLG_RX1OVR);
+    uint8_t e = sticky;
+
+    if (tec >= 96 || rec >= 96)  e |= MCP_EFLG_EWARN;
+    if (tec >= 96)               e |= MCP_EFLG_TXWAR;
+    if (rec >= 96)               e |= MCP_EFLG_RXWAR;
+    if (tec >= 128)              e |= MCP_EFLG_TXEP;
+    if (rec >= 128)              e |= MCP_EFLG_RXEP;
+    /* TEC is uint8_t so it caps at 255; treat == 255 as bus-off too,
+     * since real CAN crosses 256 only briefly before reset. Tests
+     * exercise the "TEC = 255 then one more error" path and expect
+     * bus-off. */
+    if (tec == 255)              e |= MCP_EFLG_TXBO;
+
+    m->regs[MCP_EFLG] = e;
+}
+
+mcp2515_err_state_t mcp2515_err_state(const mcp2515_t *m)
+{
+    if (m->regs[MCP_EFLG] & MCP_EFLG_TXBO)              return MCP_ERR_STATE_BUSOFF;
+    if (m->regs[MCP_EFLG] & (MCP_EFLG_TXEP | MCP_EFLG_RXEP))
+                                                        return MCP_ERR_STATE_PASSIVE;
+    return MCP_ERR_STATE_ACTIVE;
+}
+
+bool    mcp2515_is_busoff(const mcp2515_t *m) { return mcp2515_err_state(m) == MCP_ERR_STATE_BUSOFF; }
+uint8_t mcp2515_tec      (const mcp2515_t *m) { return m->regs[MCP_TEC]; }
+uint8_t mcp2515_rec      (const mcp2515_t *m) { return m->regs[MCP_REC]; }
+
+/* Raise ERRIF + MERRF in CANINTF, then re-evaluate INT pin. */
+static void raise_error_flags(mcp2515_t *m, bool merr)
+{
+    m->regs[MCP_CANINTF] |= MCP_INT_ERRIF;
+    if (merr) m->regs[MCP_CANINTF] |= MCP_INT_MERRF;
+    update_int_pin(m);
+}
+
+static uint8_t saturating_add_u8(uint8_t a, int b)
+{
+    int v = (int)a + b;
+    if (v < 0)   v = 0;
+    if (v > 255) v = 255;
+    return (uint8_t)v;
+}
+
+void mcp2515_inject_tx_errors(mcp2515_t *m, int count)
+{
+    if (!m || count <= 0) return;
+    /* Datasheet: TX error increments TEC by 8 (most error types). */
+    m->regs[MCP_TEC] = saturating_add_u8(m->regs[MCP_TEC], 8 * count);
+    update_error_state(m);
+    raise_error_flags(m, true);
+}
+
+void mcp2515_inject_rx_errors(mcp2515_t *m, int count)
+{
+    if (!m || count <= 0) return;
+    /* RX error increments REC by 1 in the most common case. */
+    m->regs[MCP_REC] = saturating_add_u8(m->regs[MCP_REC], count);
+    update_error_state(m);
+    raise_error_flags(m, false);
+}
+
+void mcp2515_force_busoff(mcp2515_t *m)
+{
+    if (!m) return;
+    m->regs[MCP_TEC] = 255;       /* model-saturated; logically >= 256 */
+    update_error_state(m);
+    raise_error_flags(m, true);
+}
+
+void mcp2515_force_error_passive(mcp2515_t *m)
+{
+    if (!m) return;
+    m->regs[MCP_TEC] = 128;
+    update_error_state(m);
+    raise_error_flags(m, false);
+}
+
+void mcp2515_recover_busoff(mcp2515_t *m)
+{
+    if (!m) return;
+    m->regs[MCP_TEC] = 0;
+    m->regs[MCP_REC] = 0;
+    update_error_state(m);
+    /* ERRIF stays set as a record of the event; firmware clears via
+     * BIT MODIFY when ready. */
 }

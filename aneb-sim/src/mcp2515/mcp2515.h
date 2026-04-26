@@ -108,6 +108,38 @@ uint8_t mcp2515_spi_byte(mcp2515_t *m, uint8_t in);
  * false if dropped (no matching filter and not in RXM=any mode). */
 bool mcp2515_rx_frame(mcp2515_t *m, const mcp2515_frame_t *frame);
 
+/* ----- Error counters / EFLG / bus-off (M4) ---------------------- */
+
+typedef enum {
+    MCP_ERR_STATE_ACTIVE  = 0,  /* TEC < 128 && REC < 128 */
+    MCP_ERR_STATE_PASSIVE = 1,  /* TEC >= 128 || REC >= 128 */
+    MCP_ERR_STATE_BUSOFF  = 2,  /* TEC >= 256 (TX disabled) */
+} mcp2515_err_state_t;
+
+mcp2515_err_state_t mcp2515_err_state(const mcp2515_t *m);
+bool                mcp2515_is_busoff(const mcp2515_t *m);
+uint8_t             mcp2515_tec      (const mcp2515_t *m);
+uint8_t             mcp2515_rec      (const mcp2515_t *m);
+
+/* Inject error events. count is the number of "error increments" — TEC
+ * gains 8 per TX-error count, REC gains 1 per RX-error count, matching
+ * datasheet section 6.2. After each call, EFLG and the error state
+ * (active/passive/bus-off) update automatically; CANINTF.ERRIF and
+ * MERRF are set when applicable, which may assert the INT pin. */
+void mcp2515_inject_tx_errors(mcp2515_t *m, int count);
+void mcp2515_inject_rx_errors(mcp2515_t *m, int count);
+
+/* Force the controller directly into a state — handy for instructor
+ * demos and scenario scripts. */
+void mcp2515_force_busoff      (mcp2515_t *m);
+void mcp2515_force_error_passive(mcp2515_t *m);
+
+/* Bus-off recovery: clears the bus-off state and resets counters.
+ * Real hardware requires 128 occurrences of 11 consecutive recessive
+ * bits OR a mode transition through Configuration; we model the
+ * latter (firmware path is identical: write CANCTRL.REQOP). */
+void mcp2515_recover_busoff(mcp2515_t *m);
+
 /* ----- Inspection (for tests / diagnostics) ----------------------- */
 
 uint8_t mcp2515_reg_read (const mcp2515_t *m, uint8_t addr);
