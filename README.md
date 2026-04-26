@@ -6,9 +6,13 @@ Built so students can run the same firmware they would flash to hardware, on the
 
 ## Status
 
-**M0 — bootstrap & toolchain.** Loads a `.hex` into one core and traces GPIO activity. No CAN, no UI yet.
+**M0–M4 done.** Engine runs all 5 chips, JSON wire protocol, MCP2515 model with full bus + error state machine, bus-off + recovery. 48 unit tests + 3 Python smokes.
 
-See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the design, [`BOOTSTRAP.md`](BOOTSTRAP.md) to set up your environment.
+- [`docs/DESIGN.md`](docs/DESIGN.md) — architectural rationale (why the code looks the way it does)
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — milestone roadmap + roster
+- [`docs/PROTOCOL.md`](docs/PROTOCOL.md) — JSON wire schema
+- [`docs/MCP2515_MODEL.md`](docs/MCP2515_MODEL.md) — controller fidelity
+- [`BOOTSTRAP.md`](BOOTSTRAP.md) — set up your environment
 
 ## Quick start (after MSYS2 is installed — see BOOTSTRAP.md)
 
