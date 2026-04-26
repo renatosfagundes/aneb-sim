@@ -1,56 +1,84 @@
 """
-process_assets.py — clean up the Gemini-generated assets.
+process_assets.py — chroma-key out the background of asset images.
 
-The renders come out with an opaque near-white "checkerboard" outside
-the actual subject (the image-viewer convention for transparency was
-baked into pixels rather than the alpha channel). This script keys out
-the pale-grey/white background to true alpha=0 so the QML compositing
-on the dark PCB-green panels reads cleanly.
+The earlier threshold version was unsafe — it keyed every near-white
+pixel including the silkscreen labels in the middle of the board.
+This version flood-fills from the four image corners through any
+near-white neighbors, so only background pixels actually CONNECTED
+to a corner become transparent. Silkscreen text inside the PCB
+stays intact.
 
-Run once after dropping new renders into this directory:
+Run after dropping new renders into this directory:
 
     python aneb-ui/aneb_ui/qml_assets/process_assets.py
 """
 from __future__ import annotations
 
 import sys
+from collections import deque
 from pathlib import Path
 
-from PyQt6.QtGui import QImage, qRgba
+from PyQt6.QtGui import QImage
 
 
 HERE = Path(__file__).resolve().parent
 
-# (filename, threshold). A pixel with R, G, B all >= threshold is
-# treated as background and gets alpha=0.
+# (filename, threshold). A pixel with R, G, B all >= threshold AND
+# reachable from a corner via similar pixels gets alpha=0.
 TARGETS = [
-    ("arduino.png",   220),
-    ("trimpot.png",   220),
-    ("buttons.png",   220),
-    # background.png keeps its solid color — it IS the PCB.
+    ("arduino.png",   240),
+    ("trimpot.png",   240),
+    ("buttons.png",   240),
 ]
 
 
-def chroma_key(path: Path, threshold: int) -> int:
+def chroma_key_flood(path: Path, threshold: int) -> int:
     img = QImage(str(path)).convertToFormat(QImage.Format.Format_ARGB32)
     if img.isNull():
         print(f"  skip {path.name}: failed to load")
         return 0
 
     w, h = img.width(), img.height()
-    keyed = 0
-    # Vectorise via raw bits buffer for speed; the assets are 2k+ wide.
     ptr = img.bits()
     ptr.setsize(img.sizeInBytes())
-    buf = memoryview(ptr).cast("B")
-    # ARGB32 is little-endian B,G,R,A in memory.
-    for i in range(0, w * h * 4, 4):
-        b, g, r, a = buf[i], buf[i+1], buf[i+2], buf[i+3]
-        if a == 0:
-            continue
-        if r >= threshold and g >= threshold and b >= threshold:
-            buf[i+3] = 0
-            keyed += 1
+    buf = memoryview(ptr).cast("B")  # B G R A per pixel
+
+    def is_bg(i: int) -> bool:
+        # Already alpha=0 → not background, already done.
+        return (buf[i + 3] != 0
+                and buf[i + 0] >= threshold
+                and buf[i + 1] >= threshold
+                and buf[i + 2] >= threshold)
+
+    visited = bytearray(w * h)        # 0 = unvisited, 1 = visited
+    queue: deque[tuple[int, int]] = deque()
+
+    def seed(x: int, y: int) -> None:
+        idx = y * w + x
+        if visited[idx]:
+            return
+        i = idx * 4
+        if is_bg(i):
+            visited[idx] = 1
+            queue.append((x, y))
+
+    # Seed from every corner.
+    for cx, cy in [(0, 0), (w - 1, 0), (0, h - 1), (w - 1, h - 1)]:
+        seed(cx, cy)
+
+    keyed = 0
+    while queue:
+        x, y = queue.popleft()
+        idx = y * w + x
+        i = idx * 4
+        # Mark transparent.
+        buf[i + 3] = 0
+        keyed += 1
+        # Expand to 4-connected neighbors.
+        if x > 0:     seed(x - 1, y)
+        if x < w - 1: seed(x + 1, y)
+        if y > 0:     seed(x, y - 1)
+        if y < h - 1: seed(x, y + 1)
 
     if keyed > 0:
         img.save(str(path))
@@ -65,8 +93,8 @@ def main() -> int:
             print(f"  missing: {fname}")
             rc = 1
             continue
-        n = chroma_key(p, thr)
-        print(f"  {fname}: keyed {n:>9} pixels  (threshold {thr})")
+        n = chroma_key_flood(p, thr)
+        print(f"  {fname}: keyed {n:>9} pixels via flood-fill  (threshold {thr})")
     return rc
 
 
