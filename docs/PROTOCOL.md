@@ -1,36 +1,153 @@
 # Wire protocol
 
-> *Status: stub. Becomes the source of truth in M1.*
+> *Status: M1. v1 schema. The shape may grow (more event types, more
+> command fields) but versioned as `v:1` until breaking changes land.*
 
-JSON Lines (UTF-8, one object per line, terminated `\n`) over stdio between
-`aneb-sim` (engine) and `aneb-ui` (UI).
+JSON Lines (UTF-8, one object per line, terminated `\n`) over **stdio**:
 
-## Direction: engine → UI (events)
+- engine **stdout** → UI input  (events)
+- UI **stdin**     → engine input (commands)
 
-| `t` | Meaning |
-|---|---|
-| `pin`         | GPIO digital state change |
-| `pwm`         | PWM duty cycle change (sampled) |
-| `uart`        | UART byte stream |
-| `can_tx`      | CAN frame transmitted on the bus |
-| `can_state`   | TEC/REC counters + active/passive/bus-off mode |
-| `can_err`     | Error frame or injected-error notification |
-| `log`         | Engine log message |
+Every message carries `"v":1` as the first field. Mismatched versions are
+rejected by the engine with a `parse error` log.
 
-## Direction: UI → engine (commands)
+---
 
-| `c` | Meaning |
-|---|---|
-| `din`           | Set digital-input pin level |
-| `adc`           | Set ADC channel value (0–1023) |
-| `uart`          | Write bytes into a chip's UART |
-| `can_inject`    | Inject a CAN frame onto the bus |
-| `can_corrupt`   | Corrupt the next frame on the bus |
-| `force_busoff`  | Force an ECU into bus-off |
-| `reset`         | Hard reset a chip |
-| `load`          | Load a new `.hex` into a chip |
-| `speed`         | Wallclock multiplier (1.0 = real time) |
-| `pause`, `resume`, `step` | Control execution |
+## Events (engine → UI)
 
-The full schema (with envelope `{"v":1,...}` versioning, exact field types,
-and validation rules) lands in M1.
+All events carry `"t":"<type>"`. Common fields:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `v`     | int    | Always `1`. |
+| `t`     | string | Event type (see below). |
+| `chip`  | string | `"ecu1"…"ecu4"`, `"mcu"`. Omitted for engine-global events. |
+| `ts`    | int    | Cycles since start of the chip's most recent firmware load. Monotonic per-chip. |
+
+### `pin` — GPIO digital state change
+
+```json
+{"v":1,"t":"pin","chip":"ecu1","pin":"PB5","val":1,"ts":12345}
+```
+
+| Field | Type | Notes |
+|---|---|---|
+| `pin` | string | Port-letter form: `"PB0"…"PD7"`. Arduino aliases (`"D7"`, `"A4"`) land in M5. |
+| `val` | int    | `0` or `1`. |
+
+### `pwm` — PWM duty cycle change
+
+```json
+{"v":1,"t":"pwm","chip":"ecu1","pin":"PD6","duty":0.42,"ts":12345}
+```
+
+`duty` is normalized 0.0–1.0. Lands in M5.
+
+### `uart` — UART byte stream from firmware
+
+```json
+{"v":1,"t":"uart","chip":"ecu1","data":"hello\n","ts":12345}
+```
+
+`data` is a JSON-escaped string. Bytes ≥ 0x80 are passed through verbatim
+(invalid UTF-8 may appear if firmware emits raw binary).
+
+### `log` — engine log message
+
+```json
+{"v":1,"t":"log","level":"info","msg":"chip ecu1: loaded 5120 bytes from ..."}
+```
+
+`level` is one of `info`, `warn`, `error`. Logs do not carry `chip` or `ts`.
+
+---
+
+## Commands (UI → engine)
+
+All commands carry `"c":"<type>"`. Common fields:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `v`    | int    | Always `1`. |
+| `c`    | string | Command type. |
+| `chip` | string | Target chip id. Required by most commands. |
+
+Engine response is asynchronous — commands take effect on the next tick.
+Failures emit a `log` event with `level:"warn"` and a descriptive message.
+
+### `din` — set digital-input pin level
+
+```json
+{"v":1,"c":"din","chip":"ecu1","pin":"PD2","val":1}
+```
+
+Drives the external pin level. The firmware sees the new state next time
+it reads `PINx`. Subsequent transitions will emit `pin` events as usual.
+
+### `adc` — set ADC channel value
+
+```json
+{"v":1,"c":"adc","chip":"ecu1","ch":0,"val":512}
+```
+
+| Field | Type | Notes |
+|---|---|---|
+| `ch`  | int  | ADC channel `0`–`7`. |
+| `val` | int  | `0`–`1023`. Out-of-range is clamped. |
+
+### `uart` — push bytes into a chip's UART RX
+
+```json
+{"v":1,"c":"uart","chip":"ecu1","data":"hello\n"}
+```
+
+### `load` — load `.hex` into a chip
+
+```json
+{"v":1,"c":"load","chip":"ecu2","path":"firmware/examples/blink.hex"}
+```
+
+Replaces firmware on a running chip (acts as load + reset).
+
+### `reset` — hard reset a chip
+
+```json
+{"v":1,"c":"reset","chip":"ecu1"}
+```
+
+### `speed` — wallclock multiplier
+
+```json
+{"v":1,"c":"speed","speed":1.0}
+```
+
+`1.0` = real time (default in M5+). M1 ignores this — engine runs flat-out.
+
+### `pause` / `resume`
+
+```json
+{"v":1,"c":"pause"}
+{"v":1,"c":"resume"}
+```
+
+Affects all chips simultaneously.
+
+### `step` — run N cycles then pause
+
+```json
+{"v":1,"c":"step","cycles":1000}
+```
+
+M1 implements this as a coarse resume-tick-pause loop (granularity
+= `SIM_CYCLES_PER_TICK`). Single-cycle stepping arrives in M5.
+
+---
+
+## Future events / commands (post-M1)
+
+Added in their respective milestones, all under `v:1`:
+
+- `can_tx`, `can_state`, `can_err`            (M3 / M4)
+- `can_inject`, `can_corrupt`, `force_busoff` (M3 / M4)
+- ADC events (currently UI-driven only)        (M5)
+- `pwm` widening to include all PWM-capable pins (M5)
