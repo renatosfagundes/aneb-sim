@@ -32,7 +32,7 @@ All events carry `"t":"<type>"`. Common fields:
 
 | Field | Type | Notes |
 |---|---|---|
-| `pin` | string | Port-letter form: `"PB0"…"PD7"`. Arduino aliases (`"D7"`, `"A4"`) land in M5. |
+| `pin` | string | Always emitted in canonical port form (`"PB5"`, etc.). Inbound commands accept Arduino aliases too — see below. |
 | `val` | int    | `0` or `1`. |
 
 ### `pwm` — PWM duty cycle change
@@ -41,7 +41,26 @@ All events carry `"t":"<type>"`. Common fields:
 {"v":1,"t":"pwm","chip":"ecu1","pin":"PD6","duty":0.42,"ts":12345}
 ```
 
-`duty` is normalized 0.0–1.0. Lands in M5.
+`duty` is normalized 0.0–1.0 from the underlying timer's `OCR / TOP`.
+
+Hooked PWM channels (per ECU; the MCU doesn't have any peripheral
+wiring requiring PWM):
+
+| Pin   | Timer  | Use on the ANEB v1.1 board |
+|-------|--------|----------------------------|
+| `PD6` (D6) | Timer 0 OC0A | LDR_LED PWM (ECU1's optical loop) |
+| `PD5` (D5) | Timer 0 OC0B | LOOP PWM (ECU1's analog loop to ECU2) |
+| `PB1` (D9) | Timer 1 OC1A | free for student use |
+| `PD3` (D3) | Timer 2 OC2B | DOUT0 (dimmable LED) |
+
+Other PWM-capable pins on the 328P are intentionally NOT hooked because
+they conflict with our peripheral wiring — Timer 1 OC1B (PB2) is the
+MCP2515 chip-select, and Timer 2 OC2A (PB3) is SPI MOSI.
+
+`duty` assumes fast-PWM mode with `TOP=255` (the default
+`analogWrite()` configuration). Other PWM modes will still report a
+`duty` based on this assumption; for true bit-accurate duty across all
+modes, sample `pin` events instead and average over a window.
 
 ### `uart` — UART byte stream from firmware
 
@@ -121,6 +140,14 @@ Failures emit a `log` event with `level:"warn"` and a descriptive message.
 Drives the external pin level. The firmware sees the new state next time
 it reads `PINx`. Subsequent transitions will emit `pin` events as usual.
 
+The `pin` field accepts three forms:
+
+- **Port form**: `"PB0"…"PD7"`. Direct AVR port + bit.
+- **Arduino digital**: `"D0"…"D13"`. Mapped per the ATmega328P pinout
+  (D0–D7 → PD0–PD7; D8–D13 → PB0–PB5).
+- **Arduino analog as digital**: `"A0"…"A5"` → PC0–PC5. (`A6` and `A7`
+  are ADC-only and are rejected by `din`.)
+
 ### `adc` — set ADC channel value
 
 ```json
@@ -130,7 +157,10 @@ it reads `PINx`. Subsequent transitions will emit `pin` events as usual.
 | Field | Type | Notes |
 |---|---|---|
 | `ch`  | int  | ADC channel `0`–`7`. |
+| `pin` | string | Optional alternative to `ch`: `"A0"`…`"A7"`. |
 | `val` | int  | `0`–`1023`. Out-of-range is clamped. |
+
+`{"pin":"A6"}` and `{"ch":6}` are equivalent.
 
 ### `uart` — push bytes into a chip's UART RX
 

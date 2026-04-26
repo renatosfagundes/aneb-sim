@@ -79,8 +79,11 @@ add_executable(test_mcp2515
     test/test_mcp2515_loopback.c
     test/test_mcp2515_errors.c
     test/test_can_bus.c
+    test/test_pin_names.c
+    src/pin_names.c
 )
 target_include_directories(test_mcp2515 PRIVATE
+    src
     src/mcp2515
     src/can_bus
     test

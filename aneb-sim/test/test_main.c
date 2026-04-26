@@ -52,6 +52,13 @@ extern int test_bus_filter_end_to_end(void);
 extern int test_bus_mode_gating(void);
 extern int test_bus_normal_tx_through_callback(void);
 
+/* pin_names suite (M5) */
+extern int test_port_form(void);
+extern int test_arduino_digital(void);
+extern int test_arduino_analog_as_digital(void);
+extern int test_pin_format_round_trip(void);
+extern int test_adc_channel_parse_arduino(void);
+
 /* mcp2515 errors suite */
 extern int test_initial_state_active(void);
 extern int test_inject_tx_error_increments_tec(void);
@@ -119,6 +126,14 @@ int main(void)
     TEST_RUN(test_bus_filter_end_to_end);
     TEST_RUN(test_bus_mode_gating);
     TEST_RUN(test_bus_normal_tx_through_callback);
+    fputc('\n', stderr);
+
+    fputs("pin names   ", stderr);
+    TEST_RUN(test_port_form);
+    TEST_RUN(test_arduino_digital);
+    TEST_RUN(test_arduino_analog_as_digital);
+    TEST_RUN(test_pin_format_round_trip);
+    TEST_RUN(test_adc_channel_parse_arduino);
     fputc('\n', stderr);
 
     fputs("errors      ", stderr);
