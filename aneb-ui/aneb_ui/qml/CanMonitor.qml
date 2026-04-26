@@ -40,7 +40,7 @@ Item {
             width: parent.width
             height: parent.height - 24
             clip: true
-            model: bridge.canFrames
+            model: bridge ? bridge.canFrames : []
             spacing: 1
 
             delegate: Rectangle {

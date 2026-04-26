@@ -55,15 +55,15 @@ Item {
                 model: ["ecu1", "ecu2", "ecu3", "ecu4", "mcu"]
                 Button {
                     text: "Load " + modelData.toUpperCase()
-                    onClicked: bridge.openLoadDialog(modelData)
+                    onClicked: { if (bridge) bridge.openLoadDialog(modelData) }
                 }
             }
-            Button { text: "Pause";  onClicked: bridge.pauseEngine() }
-            Button { text: "Resume"; onClicked: bridge.resumeEngine() }
+            Button { text: "Pause";  onClicked: { if (bridge) bridge.pauseEngine() } }
+            Button { text: "Resume"; onClicked: { if (bridge) bridge.resumeEngine() } }
             Text {
                 anchors.verticalCenter: parent.verticalCenter
-                text: "Engine: " + (bridge.engineRunning ? "running" : "stopped")
-                color: bridge.engineRunning ? "#22cc44" : "#ddaa22"
+                text: "Engine: " + (bridge && bridge.engineRunning ? "running" : "stopped")
+                color: (bridge && bridge.engineRunning) ? "#22cc44" : "#ddaa22"
                 font.family: "Consolas"
                 font.pixelSize: 12
             }
