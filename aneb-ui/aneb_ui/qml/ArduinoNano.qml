@@ -45,9 +45,9 @@ Item {
         return (c && c[p]) ? c[p] : 0.0
     }
 
-    // SVG's natural aspect ratio.
-    readonly property real _svgW: 300
-    readonly property real _svgH: 135.833
+    // SVG's natural aspect ratio (matches arduino-nano.svg viewBox).
+    readonly property real _svgW: 400
+    readonly property real _svgH: 260
     implicitWidth: _svgW
     implicitHeight: _svgH
 
@@ -64,33 +64,32 @@ Item {
         Image {
             id: nano
             anchors.fill: parent
-            source: "../qml_assets/arduino-vector.svg"
+            source: "../qml_assets/arduino-nano.svg"
             fillMode: Image.PreserveAspectFit
-            sourceSize.width:  root._svgW * 4   // crisp at high DPI
-            sourceSize.height: root._svgH * 4
+            sourceSize.width:  root._svgW * 3
+            sourceSize.height: root._svgH * 3
             smooth: true
             antialiasing: true
         }
 
-        // ---- Calibration constants (tune to the SVG) -------------
-        //
-        // First pass: rough estimates against a typical Arduino Nano
-        // top-down render at this aspect. Re-tune by looking at the
-        // rendered SVG and shifting these values.
+        // ---- Calibration constants ------------------------------
+        // Coordinates come straight from arduino-nano.svg (viewBox
+        // 0 0 400 260). LED <rect> bodies are 6x12, centered at
+        // x+3, y+6. Pad <circle> elements have explicit cx/cy.
         readonly property var leds: ({
-            tx:  { x: 232, y:  48, color: "#ff4444" },
-            rx:  { x: 232, y:  56, color: "#ffdd44" },
-            l:   { x: 232, y:  64, color: "#ffaa22" },
-            pwr: { x: 232, y:  72, color: "#22cc44" },
+            tx:  { x: 308, y:  96, color: "#ff4444" },
+            rx:  { x: 308, y: 116, color: "#ffdd44" },
+            l:   { x: 308, y: 136, color: "#ffaa22" },
+            pwr: { x: 308, y: 156, color: "#22cc44" },
         })
 
-        // Header pad coordinates. Tune `topY`, `botY`, `startX`,
-        // `pitch` once against the rendered SVG; pad layout follows
-        // a regular grid in real Nano renders.
-        readonly property real padTopY: 13
-        readonly property real padBotY: 122
-        readonly property real padStartX: 22
-        readonly property real padPitch: 18.6
+        // Header pads sit on a regular 22px-pitch grid starting at
+        // cx=45, with the top row at cy=40 and the bottom row at
+        // cy=215.
+        readonly property real padTopY: 40
+        readonly property real padBotY: 215
+        readonly property real padStartX: 45
+        readonly property real padPitch: 22
 
         readonly property var topRow: [
             { lbl: "D12", port: "PB4" }, { lbl: "D11", port: "PB3" }, { lbl: "D10", port: "PB2" },
@@ -117,12 +116,13 @@ Item {
             ]
             Item {
                 property var cfg: stage.leds[modelData.key]
-                x: cfg.x - 3; y: cfg.y - 3
-                width: 6; height: 6
+                // SVG LED rect is 6 wide x 12 tall; center it.
+                x: cfg.x - 3; y: cfg.y - 6
+                width: 6; height: 12
                 // Glow halo.
                 Rectangle {
                     anchors.centerIn: parent
-                    width: 14; height: 14; radius: 7
+                    width: 22; height: 22; radius: 11
                     color: parent.cfg.color
                     opacity: 0.45 * modelData.brightness
                     visible: modelData.brightness > 0.05

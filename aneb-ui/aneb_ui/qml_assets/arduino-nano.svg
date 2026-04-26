@@ -1,0 +1,262 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 260" width="100%" height="100%">
+  <defs>
+    <!-- Static Drop Shadow for PCB Realism -->
+    <filter id="pcbShadow" x="-5%" y="-5%" width="120%" height="120%">
+      <feDropShadow dx="3" dy="3" stdDeviation="4" flood-color="#000000" flood-opacity="0.4" />
+    </filter>
+
+    <!-- Gradients -->
+    <linearGradient id="pcbGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#0d6b5c" />
+      <stop offset="50%" stop-color="#004d40" />
+      <stop offset="100%" stop-color="#00231d" />
+    </linearGradient>
+
+    <linearGradient id="usbMetalGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f5f5f5" />
+      <stop offset="40%" stop-color="#aaaaaa" />
+      <stop offset="60%" stop-color="#777777" />
+      <stop offset="100%" stop-color="#cccccc" />
+    </linearGradient>
+
+    <radialGradient id="goldPadGrad" cx="50%" cy="50%" r="50%">
+      <stop offset="30%" stop-color="#ffe480" />
+      <stop offset="70%" stop-color="#d4af37" />
+      <stop offset="100%" stop-color="#996515" />
+    </radialGradient>
+
+    <linearGradient id="chipBodyGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#444444" />
+      <stop offset="100%" stop-color="#111111" />
+    </linearGradient>
+
+    <linearGradient id="chipPinGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#e0e0e0" />
+      <stop offset="100%" stop-color="#888888" />
+    </linearGradient>
+
+    <radialGradient id="crystalGrad" cx="30%" cy="30%" r="70%">
+      <stop offset="0%" stop-color="#ffffff" />
+      <stop offset="50%" stop-color="#cccccc" />
+      <stop offset="100%" stop-color="#777777" />
+    </radialGradient>
+  </defs>
+
+  <!-- ================= PCB BODY ================= -->
+  <rect x="15" y="20" width="370" height="210" rx="8" fill="url(#pcbGrad)" stroke="#0a3d32" stroke-width="2" filter="url(#pcbShadow)" />
+
+  <!-- ================= SILKSCREEN FRAMES ================= -->
+  <!-- Main Chip Bounding Box -->
+  <rect x="155" y="65" width="90" height="90" rx="2" fill="none" stroke="#a0b0a8" stroke-width="0.8" stroke-dasharray="3 3" opacity="0.8" />
+  <!-- Crystal Bounding Box -->
+  <rect x="240" y="70" width="42" height="34" rx="2" fill="none" stroke="#a0b0a8" stroke-width="0.8" stroke-dasharray="3 3" opacity="0.8" />
+
+  <!-- ================= USB CONNECTOR ================= -->
+  <g id="usb_connector">
+    <!-- Metal Shield -->
+    <rect x="5" y="75" width="32" height="90" rx="3" fill="url(#usbMetalGrad)" stroke="#444" stroke-width="1" />
+    <!-- Inner Cavity -->
+    <rect x="10" y="85" width="22" height="70" rx="1" fill="#111111" />
+    <!-- Inner Tab -->
+    <rect x="15" y="115" width="12" height="18" fill="#e0e0e0" />
+    <!-- Mounting Pins -->
+    <rect x="8" y="70" width="8" height="4" fill="#333" />
+    <rect x="28" y="70" width="8" height="4" fill="#333" />
+    <rect x="8" y="166" width="8" height="4" fill="#333" />
+    <rect x="28" y="166" width="8" height="4" fill="#333" />
+  </g>
+
+  <!-- ================= ICSP HEADER (2x3 grid) ================= -->
+  <g id="icsp_header">
+    <!-- Plastic Frame -->
+    <rect x="362" y="175" width="22" height="38" rx="2" fill="#1a1a1a" stroke="#333" stroke-width="1" />
+    <!-- Gold Rings & Dark Centers -->
+    <!-- Row 1 -->
+    <circle cx="368" cy="182" r="4.5" fill="url(#goldPadGrad)" />
+    <circle cx="368" cy="182" r="2.5" fill="#111" />
+    
+    <circle cx="378" cy="182" r="4.5" fill="url(#goldPadGrad)" />
+    <circle cx="378" cy="182" r="2.5" fill="#111" />
+    
+    <!-- Row 2 -->
+    <circle cx="368" cy="194" r="4.5" fill="url(#goldPadGrad)" />
+    <circle cx="368" cy="194" r="2.5" fill="#111" />
+    
+    <circle cx="378" cy="194" r="4.5" fill="url(#goldPadGrad)" />
+    <circle cx="378" cy="194" r="2.5" fill="#111" />
+    
+    <!-- Row 3 -->
+    <circle cx="368" cy="206" r="4.5" fill="url(#goldPadGrad)" />
+    <circle cx="368" cy="206" r="2.5" fill="#111" />
+    
+    <circle cx="378" cy="206" r="4.5" fill="url(#goldPadGrad)" />
+    <circle cx="378" cy="206" r="2.5" fill="#111" />
+  </g>
+
+  <!-- ================= MAIN CHIP (ATmega328P) ================= -->
+  <g id="atmega328p">
+    <!-- Pins Left (8) -->
+    <rect x="152" y="78" width="8" height="5" fill="url(#chipPinGrad)" /><rect x="152" y="88" width="8" height="5" fill="url(#chipPinGrad)" /><rect x="152" y="98" width="8" height="5" fill="url(#chipPinGrad)" /><rect x="152" y="108" width="8" height="5" fill="url(#chipPinGrad)" /><rect x="152" y="118" width="8" height="5" fill="url(#chipPinGrad)" /><rect x="152" y="128" width="8" height="5" fill="url(#chipPinGrad)" /><rect x="152" y="138" width="8" height="5" fill="url(#chipPinGrad)" /><rect x="152" y="148" width="8" height="5" fill="url(#chipPinGrad)" />
+    <!-- Pins Top (8) -->
+    <rect x="165" y="65" width="5" height="8" fill="url(#chipPinGrad)" /><rect x="175" y="65" width="5" height="8" fill="url(#chipPinGrad)" /><rect x="185" y="65" width="5" height="8" fill="url(#chipPinGrad)" /><rect x="195" y="65" width="5" height="8" fill="url(#chipPinGrad)" /><rect x="205" y="65" width="5" height="8" fill="url(#chipPinGrad)" /><rect x="215" y="65" width="5" height="8" fill="url(#chipPinGrad)" /><rect x="225" y="65" width="5" height="8" fill="url(#chipPinGrad)" /><rect x="235" y="65" width="5" height="8" fill="url(#chipPinGrad)" />
+    <!-- Pins Right (8) -->
+    <rect x="220" y="78" width="8" height="5" fill="url(#chipPinGrad)" /><rect x="220" y="88" width="8" height="5" fill="url(#chipPinGrad)" /><rect x="220" y="98" width="8" height="5" fill="url(#chipPinGrad)" /><rect x="220" y="108" width="8" height="5" fill="url(#chipPinGrad)" /><rect x="220" y="118" width="8" height="5" fill="url(#chipPinGrad)" /><rect x="220" y="128" width="8" height="5" fill="url(#chipPinGrad)" /><rect x="220" y="138" width="8" height="5" fill="url(#chipPinGrad)" /><rect x="220" y="148" width="8" height="5" fill="url(#chipPinGrad)" />
+    <!-- Pins Bottom (8) -->
+    <rect x="165" y="155" width="5" height="8" fill="url(#chipPinGrad)" /><rect x="175" y="155" width="5" height="8" fill="url(#chipPinGrad)" /><rect x="185" y="155" width="5" height="8" fill="url(#chipPinGrad)" /><rect x="195" y="155" width="5" height="8" fill="url(#chipPinGrad)" /><rect x="205" y="155" width="5" height="8" fill="url(#chipPinGrad)" /><rect x="215" y="155" width="5" height="8" fill="url(#chipPinGrad)" /><rect x="225" y="155" width="5" height="8" fill="url(#chipPinGrad)" /><rect x="235" y="155" width="5" height="8" fill="url(#chipPinGrad)" />
+
+    <!-- Chip Body -->
+    <rect x="160" y="73" width="80" height="80" rx="4" fill="url(#chipBodyGrad)" stroke="#0a0a0a" stroke-width="1.5" />
+    <!-- Bevel Highlights -->
+    <path d="M160 77 L240 77" stroke="#555555" stroke-width="2" />
+    <path d="M164 73 L164 153" stroke="#555555" stroke-width="2" />
+    <!-- Bottom Edge Shadow -->
+    <path d="M160 153 L240 153" stroke="#000000" stroke-width="2" opacity="0.6" />
+
+    <!-- Silkscreen on Chip -->
+    <text x="200" y="107" font-family="Arial, Helvetica, sans-serif" font-size="8" font-weight="bold" fill="#e0e0e0" text-anchor="middle">ATMEGA</text>
+    <text x="200" y="119" font-family="Arial, Helvetica, sans-serif" font-size="8" font-weight="bold" fill="#e0e0e0" text-anchor="middle">328P</text>
+    <!-- Pin-1 Indicator -->
+    <circle cx="167" cy="80" r="2.5" fill="#e0e0e0" />
+  </g>
+
+  <!-- ================= CRYSTAL & CAPS ================= -->
+  <!-- Crystal -->
+  <g id="crystal">
+    <rect x="245" y="80" width="30" height="20" rx="4" fill="url(#crystalGrad)" stroke="#666" stroke-width="1" />
+    <!-- Crystal Pins -->
+    <rect x="252" y="70" width="4" height="10" fill="url(#chipPinGrad)" />
+    <rect x="264" y="70" width="4" height="10" fill="url(#chipPinGrad)" />
+    <rect x="252" y="100" width="4" height="10" fill="url(#chipPinGrad)" />
+    <rect x="264" y="100" width="4" height="10" fill="url(#chipPinGrad)" />
+    <!-- Silkscreen Label -->
+    <text x="260" y="118" font-family="Arial, Helvetica, sans-serif" font-size="6" fill="#e0f0e8" text-anchor="middle">16M</text>
+  </g>
+
+  <!-- Decoupling Caps (Tan) -->
+  <g id="decoupling_caps">
+    <rect x="250" y="130" width="12" height="8" rx="1" fill="#c49463" stroke="#8a5a3a" stroke-width="0.5" />
+    <rect x="268" y="130" width="12" height="8" rx="1" fill="#c49463" stroke="#8a5a3a" stroke-width="0.5" />
+  </g>
+
+  <!-- ================= RESET BUTTON ================= -->
+  <g id="reset_button">
+    <!-- Switch Body -->
+    <rect x="65" y="110" width="20" height="20" rx="2" fill="#1a1a1a" stroke="#333" stroke-width="1" />
+    <!-- Inner Tactile Dot -->
+    <rect x="72" y="117" width="6" height="6" rx="1" fill="#555555" />
+    <!-- Silkscreen Label -->
+    <text x="75" y="142" font-family="Arial, Helvetica, sans-serif" font-size="6" fill="#e0f0e8" text-anchor="middle">RST</text>
+  </g>
+
+  <!-- ================= SMD LEDs ================= -->
+  <g id="status_leds">
+    <!-- LED TX (Red Body) -->
+    <rect x="305" y="90" width="6" height="12" rx="1" fill="#3a1010" stroke="#2a0a0a" stroke-width="0.5" id="led_tx" />
+    <!-- LED RX (Yellow Body) -->
+    <rect x="305" y="110" width="6" height="12" rx="1" fill="#3a3a00" stroke="#2a2a00" stroke-width="0.5" id="led_rx" />
+    <!-- LED L (Orange Body) -->
+    <rect x="305" y="130" width="6" height="12" rx="1" fill="#3a1a00" stroke="#2a0a00" stroke-width="0.5" id="led_l" />
+    <!-- LED PWR (Green Body) -->
+    <rect x="305" y="150" width="6" height="12" rx="1" fill="#001a0a" stroke="#000a00" stroke-width="0.5" id="led_pwr" />
+
+    <!-- Silkscreen Labels for LEDs -->
+    <text x="315" y="97" font-family="Arial, Helvetica, sans-serif" font-size="5" fill="#e0f0e8">TX</text>
+    <text x="315" y="117" font-family="Arial, Helvetica, sans-serif" font-size="5" fill="#e0f0e8">RX</text>
+    <text x="315" y="137" font-family="Arial, Helvetica, sans-serif" font-size="5" fill="#e0f0e8">L</text>
+    <text x="315" y="157" font-family="Arial, Helvetica, sans-serif" font-size="5" fill="#e0f0e8">PWR</text>
+  </g>
+
+  <!-- ================= PASSIVE COMPONENTS (Scattered SMD) ================= -->
+  <g id="passives">
+    <!-- Near USB -->
+    <rect x="55" y="55" width="8" height="4" rx="0.5" fill="#2d2d2d" />
+    <rect x="55" y="65" width="8" height="4" rx="0.5" fill="#3d2a00" />
+    <rect x="65" y="185" width="8" height="4" rx="0.5" fill="#c49463" />
+    <!-- Near Crystal -->
+    <rect x="290" y="85" width="8" height="4" rx="0.5" fill="#2d2d2d" />
+    <rect x="290" y="95" width="8" height="4" rx="0.5" fill="#3d2a00" />
+    <!-- Near Chip Bottom -->
+    <rect x="175" y="165" width="8" height="4" rx="0.5" fill="#2d2d2d" />
+    <rect x="190" y="165" width="8" height="4" rx="0.5" fill="#c49463" />
+    <!-- Near ICSP -->
+    <rect x="345" y="190" width="8" height="4" rx="0.5" fill="#2d2d2d" />
+  </g>
+
+  <!-- ================= HEADER PADS & SILKSCREEN ================= -->
+  <!-- Top Header -->
+  <g id="top_header">
+    <!-- Pads -->
+    <circle cx="45" cy="40" r="6" fill="url(#goldPadGrad)" /><circle cx="45" cy="40" r="3" fill="#111" id="pad_top_d12" />
+    <circle cx="67" cy="40" r="6" fill="url(#goldPadGrad)" /><circle cx="67" cy="40" r="3" fill="#111" id="pad_top_d11" />
+    <circle cx="89" cy="40" r="6" fill="url(#goldPadGrad)" /><circle cx="89" cy="40" r="3" fill="#111" id="pad_top_d10" />
+    <circle cx="111" cy="40" r="6" fill="url(#goldPadGrad)" /><circle cx="111" cy="40" r="3" fill="#111" id="pad_top_d9" />
+    <circle cx="133" cy="40" r="6" fill="url(#goldPadGrad)" /><circle cx="133" cy="40" r="3" fill="#111" id="pad_top_d8" />
+    <circle cx="155" cy="40" r="6" fill="url(#goldPadGrad)" /><circle cx="155" cy="40" r="3" fill="#111" id="pad_top_d7" />
+    <circle cx="177" cy="40" r="6" fill="url(#goldPadGrad)" /><circle cx="177" cy="40" r="3" fill="#111" id="pad_top_d6" />
+    <circle cx="199" cy="40" r="6" fill="url(#goldPadGrad)" /><circle cx="199" cy="40" r="3" fill="#111" id="pad_top_d5" />
+    <circle cx="221" cy="40" r="6" fill="url(#goldPadGrad)" /><circle cx="221" cy="40" r="3" fill="#111" id="pad_top_d4" />
+    <circle cx="243" cy="40" r="6" fill="url(#goldPadGrad)" /><circle cx="243" cy="40" r="3" fill="#111" id="pad_top_d3" />
+    <circle cx="265" cy="40" r="6" fill="url(#goldPadGrad)" /><circle cx="265" cy="40" r="3" fill="#111" id="pad_top_d2" />
+    <circle cx="287" cy="40" r="6" fill="url(#goldPadGrad)" /><circle cx="287" cy="40" r="3" fill="#111" id="pad_top_gnd" />
+    <circle cx="309" cy="40" r="6" fill="url(#goldPadGrad)" /><circle cx="309" cy="40" r="3" fill="#111" id="pad_top_rst" />
+    <circle cx="331" cy="40" r="6" fill="url(#goldPadGrad)" /><circle cx="331" cy="40" r="3" fill="#111" id="pad_top_rx0" />
+    <circle cx="353" cy="40" r="6" fill="url(#goldPadGrad)" /><circle cx="353" cy="40" r="3" fill="#111" id="pad_top_tx1" />
+
+    <!-- Silkscreen Labels -->
+    <text x="45" y="30" font-family="Arial, Helvetica, sans-serif" font-size="6" fill="#e0f0e8" text-anchor="middle">D12</text>
+    <text x="67" y="30" font-family="Arial, Helvetica, sans-serif" font-size="6" fill="#e0f0e8" text-anchor="middle">D11</text>
+    <text x="89" y="30" font-family="Arial, Helvetica, sans-serif" font-size="6" fill="#e0f0e8" text-anchor="middle">D10</text>
+    <text x="111" y="30" font-family="Arial, Helvetica, sans-serif" font-size="6" fill="#e0f0e8" text-anchor="middle">D9</text>
+    <text x="133" y="30" font-family="Arial, Helvetica, sans-serif" font-size="6" fill="#e0f0e8" text-anchor="middle">D8</text>
+    <text x="155" y="30" font-family="Arial, Helvetica, sans-serif" font-size="6" fill="#e0f0e8" text-anchor="middle">D7</text>
+    <text x="177" y="30" font-family="Arial, Helvetica, sans-serif" font-size="6" fill="#e0f0e8" text-anchor="middle">D6</text>
+    <text x="199" y="30" font-family="Arial, Helvetica, sans-serif" font-size="6" fill="#e0f0e8" text-anchor="middle">D5</text>
+    <text x="221" y="30" font-family="Arial, Helvetica, sans-serif" font-size="6" fill="#e0f0e8" text-anchor="middle">D4</text>
+    <text x="243" y="30" font-family="Arial, Helvetica, sans-serif" font-size="6" fill="#e0f0e8" text-anchor="middle">D3</text>
+    <text x="265" y="30" font-family="Arial, Helvetica, sans-serif" font-size="6" fill="#e0f0e8" text-anchor="middle">D2</text>
+    <text x="287" y="30" font-family="Arial, Helvetica, sans-serif" font-size="6" fill="#e0f0e8" text-anchor="middle">GND</text>
+    <text x="309" y="30" font-family="Arial, Helvetica, sans-serif" font-size="6" fill="#e0f0e8" text-anchor="middle">RST</text>
+    <text x="331" y="30" font-family="Arial, Helvetica, sans-serif" font-size="6" fill="#e0f0e8" text-anchor="middle">RX0</text>
+    <text x="353" y="30" font-family="Arial, Helvetica, sans-serif" font-size="6" fill="#e0f0e8" text-anchor="middle">TX1</text>
+  </g>
+
+  <!-- Bottom Header -->
+  <g id="bottom_header">
+    <!-- Pads -->
+    <circle cx="45" cy="215" r="6" fill="url(#goldPadGrad)" /><circle cx="45" cy="215" r="3" fill="#111" id="pad_bot_d13" />
+    <circle cx="67" cy="215" r="6" fill="url(#goldPadGrad)" /><circle cx="67" cy="215" r="3" fill="#111" id="pad_bot_3v3" />
+    <circle cx="89" cy="215" r="6" fill="url(#goldPadGrad)" /><circle cx="89" cy="215" r="3" fill="#111" id="pad_bot_aref" />
+    <circle cx="111" cy="215" r="6" fill="url(#goldPadGrad)" /><circle cx="111" cy="215" r="3" fill="#111" id="pad_bot_a0" />
+    <circle cx="133" cy="215" r="6" fill="url(#goldPadGrad)" /><circle cx="133" cy="215" r="3" fill="#111" id="pad_bot_a1" />
+    <circle cx="155" cy="215" r="6" fill="url(#goldPadGrad)" /><circle cx="155" cy="215" r="3" fill="#111" id="pad_bot_a2" />
+    <circle cx="177" cy="215" r="6" fill="url(#goldPadGrad)" /><circle cx="177" cy="215" r="3" fill="#111" id="pad_bot_a3" />
+    <circle cx="199" cy="215" r="6" fill="url(#goldPadGrad)" /><circle cx="199" cy="215" r="3" fill="#111" id="pad_bot_a4" />
+    <circle cx="221" cy="215" r="6" fill="url(#goldPadGrad)" /><circle cx="221" cy="215" r="3" fill="#111" id="pad_bot_a5" />
+    <circle cx="243" cy="215" r="6" fill="url(#goldPadGrad)" /><circle cx="243" cy="215" r="3" fill="#111" id="pad_bot_a6" />
+    <circle cx="265" cy="215" r="6" fill="url(#goldPadGrad)" /><circle cx="265" cy="215" r="3" fill="#111" id="pad_bot_a7" />
+    <circle cx="287" cy="215" r="6" fill="url(#goldPadGrad)" /><circle cx="287" cy="215" r="3" fill="#111" id="pad_bot_5v" />
+    <circle cx="309" cy="215" r="6" fill="url(#goldPadGrad)" /><circle cx="309" cy="215" r="3" fill="#111" id="pad_bot_rst" />
+    <circle cx="331" cy="215" r="6" fill="url(#goldPadGrad)" /><circle cx="331" cy="215" r="3" fill="#111" id="pad_bot_gnd" />
+    <circle cx="353" cy="215" r="6" fill="url(#goldPadGrad)" /><circle cx="353" cy="215" r="3" fill="#111" id="pad_bot_vin" />
+
+    <!-- Silkscreen Labels -->
+    <text x="45" y="205" font-family="Arial, Helvetica, sans-serif" font-size="6" fill="#e0f0e8" text-anchor="middle">D13</text>
+    <text x="67" y="205" font-family="Arial, Helvetica, sans-serif" font-size="6" fill="#e0f0e8" text-anchor="middle">3V3</text>
+    <text x="89" y="205" font-family="Arial, Helvetica, sans-serif" font-size="6" fill="#e0f0e8" text-anchor="middle">AREF</text>
+    <text x="111" y="205" font-family="Arial, Helvetica, sans-serif" font-size="6" fill="#e0f0e8" text-anchor="middle">A0</text>
+    <text x="133" y="205" font-family="Arial, Helvetica, sans-serif" font-size="6" fill="#e0f0e8" text-anchor="middle">A1</text>
+    <text x="155" y="205" font-family="Arial, Helvetica, sans-serif" font-size="6" fill="#e0f0e8" text-anchor="middle">A2</text>
+    <text x="177" y="205" font-family="Arial, Helvetica, sans-serif" font-size="6" fill="#e0f0e8" text-anchor="middle">A3</text>
+    <text x="199" y="205" font-family="Arial, Helvetica, sans-serif" font-size="6" fill="#e0f0e8" text-anchor="middle">A4</text>
+    <text x="221" y="205" font-family="Arial, Helvetica, sans-serif" font-size="6" fill="#e0f0e8" text-anchor="middle">A5</text>
+    <text x="243" y="205" font-family="Arial, Helvetica, sans-serif" font-size="6" fill="#e0f0e8" text-anchor="middle">A6</text>
+    <text x="265" y="205" font-family="Arial, Helvetica, sans-serif" font-size="6" fill="#e0f0e8" text-anchor="middle">A7</text>
+    <text x="287" y="205" font-family="Arial, Helvetica, sans-serif" font-size="6" fill="#e0f0e8" text-anchor="middle">5V</text>
+    <text x="309" y="205" font-family="Arial, Helvetica, sans-serif" font-size="6" fill="#e0f0e8" text-anchor="middle">RST</text>
+    <text x="331" y="205" font-family="Arial, Helvetica, sans-serif" font-size="6" fill="#e0f0e8" text-anchor="middle">GND</text>
+    <text x="353" y="205" font-family="Arial, Helvetica, sans-serif" font-size="6" fill="#e0f0e8" text-anchor="middle">VIN</text>
+  </g>
+
+  <!-- ================= BOARD BRANDING SILKSCREEN ================= -->
+  <text x="375" y="222" font-family="Arial, Helvetica, sans-serif" font-size="9" font-style="italic" fill="#a0b0a8" text-anchor="end" letter-spacing="1">Arduino Nano</text>
+</svg>
