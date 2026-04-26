@@ -7,6 +7,10 @@ emitting fine-grained Qt signals, sim_proxy.py keeps owning the
 subprocess and command marshalling, and this bridge translates
 between them and the QML side.
 
+Also loads `qml_assets/arduino-coords.json` (produced by
+`scripts/calibrate-nano.py`) at startup so the QML overlay knows
+where each LED and pad sits on the Nano image.
+
 QML reads:
   - bridge.engineRunning           bool
   - bridge.pinStates               dict[chip][pin] -> 0/1
@@ -32,6 +36,7 @@ bridge; function on...() {} }` or property bindings to react.
 """
 from __future__ import annotations
 
+import json
 import logging
 from pathlib import Path
 
@@ -43,6 +48,22 @@ from .state     import SimState
 
 
 log = logging.getLogger(__name__)
+
+# Where calibrate-nano.py drops the JSON.
+NANO_COORDS_PATH = Path(__file__).resolve().parent / "qml_assets" / "arduino-coords.json"
+
+
+def _load_nano_coords() -> dict:
+    if not NANO_COORDS_PATH.exists():
+        log.warning("nano-coords JSON not found at %s — overlays will be blank",
+                    NANO_COORDS_PATH)
+        return {}
+    try:
+        data = json.loads(NANO_COORDS_PATH.read_text(encoding="utf-8"))
+        return data.get("coords") or {}
+    except Exception as exc:
+        log.error("failed to read nano-coords JSON: %s", exc)
+        return {}
 
 
 class QmlBridge(QObject):
@@ -66,6 +87,7 @@ class QmlBridge(QObject):
         self._state = state
         self._proxy = proxy
         self._engine_running = False
+        self._nano_coords = _load_nano_coords()
 
         # Wire SimState's signals to our notifiers.
         state.pin_changed.connect      (self._on_pin_changed)
@@ -108,6 +130,15 @@ class QmlBridge(QObject):
     @pyqtProperty(bool, notify=engineRunningChanged)
     def engineRunning(self) -> bool:
         return self._engine_running
+
+    # Nano image overlay coordinates loaded from arduino-coords.json.
+    # Static after startup — not notifiable. Layout:
+    #   { "leds": { "tx": {x,y}, "rx": {x,y}, ... },
+    #     "pads": { "top": { "d12": {x,y}, ... }, "bot": {...} } }
+    # x and y are normalised to image dimensions (0..1).
+    @pyqtProperty("QVariantMap", constant=True)
+    def nanoCoords(self) -> dict:
+        return self._nano_coords
 
     @pyqtProperty("QVariantMap", notify=pinSeqChanged)
     def pinStates(self) -> dict:

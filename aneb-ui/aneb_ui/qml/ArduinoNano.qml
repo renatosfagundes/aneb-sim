@@ -1,22 +1,18 @@
-// ArduinoNano.qml — SVG static base + QML dynamic overlays.
+// ArduinoNano.qml — PNG base + JSON-driven overlay coordinates.
 //
-// The static board art comes from `qml_assets/arduino-vector.svg`
-// (viewBox 300 x 135.83). On top, QML draws:
-//   - tinted rectangles where the on-board status LEDs sit
-//     (TX / RX / L / PWR), animating with engine + UART events
-//   - small glowing dots over each header through-hole, lit when
-//     the firmware drives the corresponding AVR pin HIGH
+// The static art comes from `qml_assets/arduino.png`. The position
+// of every LED / header pad comes from `qml_assets/arduino-coords.json`
+// (produced by `scripts/calibrate-nano.py`). The bridge reads the JSON
+// at startup and exposes it as `bridge.nanoCoords` — the QML below
+// just looks each item up by name.
 //
-// All overlay positions are declared as numeric constants below in
-// the SVG's native 300 x 135.83 coordinate space. Calibrate against
-// the rendered SVG by tweaking the constants — no SVG editing
-// required.
+// All overlay coordinates are normalised (0..1) to image dimensions,
+// so the layout stays correct at any rendered size.
 import QtQuick 2.15
 
 Item {
     id: root
 
-    // --- Public API ---
     property string chip: ""
     property bool   power: false
     property real   txGlow: 0.0
@@ -45,141 +41,153 @@ Item {
         return (c && c[p]) ? c[p] : 0.0
     }
 
-    // SVG's natural aspect ratio (matches arduino-nano.svg viewBox).
-    readonly property real _svgW: 400
-    readonly property real _svgH: 260
-    implicitWidth: _svgW
-    implicitHeight: _svgH
+    // Bridge-provided coordinate dict. Empty until calibration is done.
+    readonly property var coords: (typeof bridge !== "undefined" && bridge && bridge.nanoCoords) ? bridge.nanoCoords : ({})
 
-    // --- Stage scaled to fit the parent while preserving aspect ---
-    Item {
-        id: stage
-        width:  root._svgW
-        height: root._svgH
-        anchors.centerIn: parent
-        scale: Math.min(root.width / root._svgW, root.height / root._svgH)
-        transformOrigin: Item.Center
+    // Pad-id -> AVR port mapping (which pin's HIGH state lights this pad).
+    // Only digital pins are listed; power / GND / RST entries are absent.
+    readonly property var padPort: ({
+        "top.d12": "PB4", "top.d11": "PB3", "top.d10": "PB2",
+        "top.d9":  "PB1", "top.d8":  "PB0", "top.d7":  "PD7",
+        "top.d6":  "PD6", "top.d5":  "PD5", "top.d4":  "PD4",
+        "top.d3":  "PD3", "top.d2":  "PD2",
+        "top.rx0": "PD0", "top.tx1": "PD1",
+        "bot.d13": "PB5",
+        "bot.a0":  "PC0", "bot.a1":  "PC1", "bot.a2":  "PC2",
+        "bot.a3":  "PC3", "bot.a4":  "PC4", "bot.a5":  "PC5"
+    })
 
-        // ---- Static SVG base art ---------------------------------
-        Image {
-            id: nano
+    implicitWidth:  710
+    implicitHeight: 351
+
+    // ---- The PNG, aspect-fit into the widget ---------------------
+    Image {
+        id: nano
+        anchors.fill: parent
+        source: "../qml_assets/arduino.png"
+        fillMode: Image.PreserveAspectFit
+        smooth: true
+        antialiasing: true
+        sourceSize.width:  710 * 2     // crisp at high DPI
+        sourceSize.height: 351 * 2
+    }
+
+    // The actual rendered area of the PNG inside the widget. With
+    // PreserveAspectFit, the image is letterboxed — overlays must
+    // anchor to this area, not the full widget bounds.
+    readonly property real _imgScale: Math.min(width / 710, height / 351)
+    readonly property real _imgW: 710 * _imgScale
+    readonly property real _imgH: 351 * _imgScale
+    readonly property real _imgX: (width  - _imgW) / 2
+    readonly property real _imgY: (height - _imgH) / 2
+
+    // ---- LED overlays --------------------------------------------
+    Repeater {
+        model: [
+            { key: "tx",  brightness: root.txGlow,                        color: "#ff4444" },
+            { key: "rx",  brightness: root.rxGlow,                        color: "#ffdd44" },
+            { key: "l",   brightness: Math.max(root.level("PB5"), root.duty("PD6")), color: "#ffaa22" },
+            { key: "pwr", brightness: root.power ? 1.0 : 0.0,             color: "#22cc44" }
+        ]
+        OnBoardLedOverlay {
+            xNorm: (root.coords.leds && root.coords.leds[modelData.key]) ? root.coords.leds[modelData.key].x : -1
+            yNorm: (root.coords.leds && root.coords.leds[modelData.key]) ? root.coords.leds[modelData.key].y : -1
+            brightness: modelData.brightness
+            color: modelData.color
+        }
+    }
+
+    // ---- Header pad overlays -------------------------------------
+    // One overlay per AVR-backed pin; power/GND/RST/AREF/etc. don't
+    // get a state dot since their levels aren't simulator-driven.
+    Repeater {
+        model: Object.keys(root.padPort)
+        PadOverlay {
+            property var parts: modelData.split(".")
+            property var entry: (root.coords.pads
+                                 && root.coords.pads[parts[0]]
+                                 && root.coords.pads[parts[0]][parts[1]])
+                               ? root.coords.pads[parts[0]][parts[1]] : null
+            xNorm: entry ? entry.x : -1
+            yNorm: entry ? entry.y : -1
+            pinPort: root.padPort[modelData]
+        }
+    }
+
+    // ---- Components ----------------------------------------------
+    component OnBoardLedOverlay: Item {
+        id: lo
+        property real xNorm: -1
+        property real yNorm: -1
+        property real brightness: 0
+        property color color: "#ffaa22"
+
+        visible: xNorm >= 0 && yNorm >= 0
+
+        // Anchor to the rendered image area, not the widget.
+        x: root._imgX + xNorm * root._imgW - width  / 2
+        y: root._imgY + yNorm * root._imgH - height / 2
+        width: 14; height: 14
+
+        // Halo.
+        Rectangle {
+            anchors.centerIn: parent
+            width: 24; height: 24; radius: 12
+            color: lo.color
+            opacity: 0.5 * lo.brightness
+            visible: lo.brightness > 0.05
+        }
+        // Body.
+        Rectangle {
             anchors.fill: parent
-            source: "../qml_assets/arduino-nano.svg"
-            fillMode: Image.PreserveAspectFit
-            sourceSize.width:  root._svgW * 3
-            sourceSize.height: root._svgH * 3
-            smooth: true
-            antialiasing: true
-        }
-
-        // ---- Calibration constants ------------------------------
-        // Coordinates come straight from arduino-nano.svg (viewBox
-        // 0 0 400 260). LED <rect> bodies are 6x12, centered at
-        // x+3, y+6. Pad <circle> elements have explicit cx/cy.
-        readonly property var leds: ({
-            tx:  { x: 308, y:  96, color: "#ff4444" },
-            rx:  { x: 308, y: 116, color: "#ffdd44" },
-            l:   { x: 308, y: 136, color: "#ffaa22" },
-            pwr: { x: 308, y: 156, color: "#22cc44" },
-        })
-
-        // Header pads sit on a regular 22px-pitch grid starting at
-        // cx=45, with the top row at cy=40 and the bottom row at
-        // cy=215.
-        readonly property real padTopY: 40
-        readonly property real padBotY: 215
-        readonly property real padStartX: 45
-        readonly property real padPitch: 22
-
-        readonly property var topRow: [
-            { lbl: "D12", port: "PB4" }, { lbl: "D11", port: "PB3" }, { lbl: "D10", port: "PB2" },
-            { lbl: "D9",  port: "PB1" }, { lbl: "D8",  port: "PB0" }, { lbl: "D7",  port: "PD7" },
-            { lbl: "D6",  port: "PD6" }, { lbl: "D5",  port: "PD5" }, { lbl: "D4",  port: "PD4" },
-            { lbl: "D3",  port: "PD3" }, { lbl: "D2",  port: "PD2" }, { lbl: "GND", port: ""    },
-            { lbl: "RST", port: ""    }, { lbl: "RX0", port: "PD0" }, { lbl: "TX1", port: "PD1" }
-        ]
-        readonly property var bottomRow: [
-            { lbl: "D13",  port: "PB5" }, { lbl: "3V3",  port: ""    }, { lbl: "AREF", port: ""    },
-            { lbl: "A0",   port: "PC0" }, { lbl: "A1",   port: "PC1" }, { lbl: "A2",   port: "PC2" },
-            { lbl: "A3",   port: "PC3" }, { lbl: "A4",   port: "PC4" }, { lbl: "A5",   port: "PC5" },
-            { lbl: "A6",   port: ""    }, { lbl: "A7",   port: ""    }, { lbl: "5V",   port: ""    },
-            { lbl: "RST",  port: ""    }, { lbl: "GND",  port: ""    }, { lbl: "VIN",  port: ""    }
-        ]
-
-        // ---- LED overlays ---------------------------------------
-        Repeater {
-            model: [
-                { key: "tx",  brightness: root.txGlow },
-                { key: "rx",  brightness: root.rxGlow },
-                { key: "l",   brightness: Math.max(root.level("PB5"), root.duty("PD6")) },
-                { key: "pwr", brightness: root.power ? 1.0 : 0.0 },
-            ]
-            Item {
-                property var cfg: stage.leds[modelData.key]
-                // SVG LED rect is 6 wide x 12 tall; center it.
-                x: cfg.x - 3; y: cfg.y - 6
-                width: 6; height: 12
-                // Glow halo.
-                Rectangle {
-                    anchors.centerIn: parent
-                    width: 22; height: 22; radius: 11
-                    color: parent.cfg.color
-                    opacity: 0.45 * modelData.brightness
-                    visible: modelData.brightness > 0.05
-                }
-                // Tinted SMD body — only visible while bright.
-                Rectangle {
-                    anchors.fill: parent
-                    radius: 1
-                    color: parent.cfg.color
-                    opacity: modelData.brightness
-                    visible: modelData.brightness > 0.05
-                }
-                Behavior on opacity { NumberAnimation { duration: 60 } }
+            radius: width / 2
+            color: lo.color
+            opacity: lo.brightness
+            visible: lo.brightness > 0.05
+            border.color: "#1a1a1a"; border.width: 1
+            // Specular dot.
+            Rectangle {
+                anchors.top: parent.top; anchors.left: parent.left
+                anchors.topMargin: parent.height * 0.18
+                anchors.leftMargin: parent.width * 0.18
+                width: parent.width * 0.30; height: parent.height * 0.30
+                radius: width / 2
+                color: "white"
+                opacity: lo.brightness * 0.7
             }
         }
-
-        // ---- Header pin-HIGH overlays ----------------------------
-        Repeater {
-            model: stage.topRow
-            PadOverlay {
-                x: stage.padStartX + index * stage.padPitch - 3
-                y: stage.padTopY - 3
-                pinPort: modelData.port
-            }
-        }
-        Repeater {
-            model: stage.bottomRow
-            PadOverlay {
-                x: stage.padStartX + index * stage.padPitch - 3
-                y: stage.padBotY - 3
-                pinPort: modelData.port
-            }
-        }
+        Behavior on opacity { NumberAnimation { duration: 60 } }
     }
 
     component PadOverlay: Item {
         id: po
+        property real xNorm: -1
+        property real yNorm: -1
         property string pinPort: ""
-        width: 6; height: 6
+
+        visible: xNorm >= 0 && yNorm >= 0
 
         function _level() {
             if (!po.pinPort) return 0
             return Math.max(root.level(po.pinPort), root.duty(po.pinPort))
         }
 
-        // Halo around the pad.
+        x: root._imgX + xNorm * root._imgW - width  / 2
+        y: root._imgY + yNorm * root._imgH - height / 2
+        width: 12; height: 12
+
+        // Halo.
         Rectangle {
             anchors.centerIn: parent
-            width: 12; height: 12; radius: 6
+            width: 22; height: 22; radius: 11
             color: "#ffd24a"
             opacity: po._level() * 0.5
             visible: po._level() > 0.05
         }
-        // Bright dot at the pad center.
+        // Bright dot.
         Rectangle {
             anchors.fill: parent
-            radius: 3
+            radius: width / 2
             color: "#ffd24a"
             opacity: po._level() * 0.95
             visible: po._level() > 0.05
