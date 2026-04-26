@@ -1,9 +1,14 @@
-// TrimPot.qml — circular trim pot drawn entirely in QML primitives.
+// TrimPot.qml — circular knob with a rotating arrow indicator.
 //
-// Body is a static blue circle with a brass center disc; only the
-// dark slot inside the brass rotates to indicate the value. Avoids
-// the diamond-corner problem that hits when you rotate a square asset
-// around its center, and removes the asset-image dependency.
+// Body is a static blue plastic disc; the indicator (a thin pointer
+// from center toward the rim) rotates with the value. Drag vertically
+// or scroll the wheel to change the value.
+//
+// Indicator angle (using Qt rotation: 0° = up, positive = clockwise):
+//   -135° at value 0    -> arrow at SW (~7 o'clock)
+//   -45°  at value 1023 -> arrow at NW (~10 o'clock)
+// The arrow sweeps the LEFT side of the dial through 9 o'clock as the
+// value rises, like a left-handed fuel gauge.
 import QtQuick 2.15
 
 Item {
@@ -16,10 +21,10 @@ Item {
     property int    minValue: 0
     property int    maxValue: 1023
 
-    implicitWidth:  50
-    implicitHeight: 78
+    implicitWidth:  40
+    implicitHeight: 60
 
-    readonly property real _angle: -135 + (adcValue / 1023.0) * 270
+    readonly property real _angle: -135 + (adcValue / 1023.0) * 90
 
     // ---- Body (blue plastic) --------------------------------------
     Rectangle {
@@ -36,28 +41,49 @@ Item {
         }
         border.color: "#082030"; border.width: 1
 
-        // Brass center disc.
+        // Subtle inner darkening so the body reads as a recessed cup
+        // rather than a flat sticker.
+        Rectangle {
+            anchors.fill: parent
+            anchors.margins: 1
+            radius: width / 2
+            color: "transparent"
+            border.color: Qt.rgba(0, 0, 0, 0.28)
+            border.width: 1
+        }
+
+        // Center pivot — small dark dot that visually anchors the
+        // arrow at the knob's center of rotation.
         Rectangle {
             anchors.centerIn: parent
-            width:  parent.width  * 0.56
-            height: parent.height * 0.56
+            width:  parent.width  * 0.18
+            height: parent.height * 0.18
             radius: width / 2
-            gradient: Gradient {
-                GradientStop { position: 0.0; color: "#e8c878" }
-                GradientStop { position: 1.0; color: "#806030" }
-            }
-            border.color: "#403018"; border.width: 1
+            color: "#0a1622"
+            border.color: "#04080d"; border.width: 1
+        }
 
-            // Rotating slot — the only thing that moves with the value.
+        // Arrow indicator — a thin white marker that rotates with
+        // the value. Wrapped in an Item with the rotation applied so
+        // the rectangle's anchors stay simple.
+        Item {
+            anchors.centerIn: parent
+            width:  parent.width
+            height: parent.height
+            rotation: root._angle
+            transformOrigin: Item.Center
+            Behavior on rotation { NumberAnimation { duration: 60 } }
+
             Rectangle {
-                anchors.centerIn: parent
-                width:  parent.width  * 0.78
-                height: parent.height * 0.18
-                radius: 1
-                color: "#1a1a1a"
-                rotation: root._angle
-                transformOrigin: Item.Center
-                Behavior on rotation { NumberAnimation { duration: 60 } }
+                anchors.horizontalCenter: parent.horizontalCenter
+                anchors.top: parent.top
+                anchors.topMargin: parent.height * 0.10
+                width:  Math.max(2, parent.width * 0.07)
+                height: parent.height * 0.36
+                radius: width / 2
+                color: "#fafaff"
+                border.color: Qt.rgba(0, 0, 0, 0.35)
+                border.width: 1
             }
         }
     }
@@ -70,16 +96,16 @@ Item {
         text: root.adcValue
         color: "#cdfac0"
         font.family: "Consolas"
-        font.pixelSize: 10
+        font.pixelSize: 9
         font.bold: true
     }
     Text {
         anchors.top: body.bottom
-        anchors.topMargin: 13
+        anchors.topMargin: 11
         anchors.horizontalCenter: parent.horizontalCenter
         text: root.label
         color: "#a8d0b0"
-        font.pixelSize: 8
+        font.pixelSize: 7
     }
 
     // ---- Input ----------------------------------------------------

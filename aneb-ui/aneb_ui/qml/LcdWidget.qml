@@ -1,15 +1,9 @@
 // LcdWidget.qml — 16x2 character LCD per chip (HD44780-style).
 //
-// Driven from `bridge.lcdLines[chip]` which is populated by the bridge
-// when it sees `__LCD__<row>:<col>:<text>\n` lines in any chip's UART.
-//
-// Visually mimics a classic 1602 module: dark plastic bezel, deep
-// blue glass with a bright cyan glow, and pixelated white characters
-// in monospace.
-//
-// Firmware example:
-//     Serial.println("__LCD__0:0:Hello, World!");
-//     Serial.println("__LCD__1:0:T = 23.4 C");
+// Driven from `bridge.lcdLines[chip]` which is now populated from the
+// engine's `lcd` event (PCF8574 backpack at I2C 0x27). Visually mimics
+// a classic 1602 module: dark plastic bezel, deep blue glass with a
+// bright cyan glow, and pixelated white characters in monospace.
 import QtQuick 2.15
 
 Item {
@@ -81,18 +75,6 @@ Item {
             gradient: Gradient {
                 GradientStop { position: 0.0; color: Qt.rgba(0.55, 0.75, 1.0, 0.25) }
                 GradientStop { position: 1.0; color: Qt.rgba(0.55, 0.75, 1.0, 0.0) }
-            }
-        }
-
-        // Faint dot-matrix grid behind the text — a hint of the
-        // 5x8 pixel cell structure without modeling each dot.
-        Repeater {
-            model: 16
-            Rectangle {
-                width: 1
-                height: parent.height
-                x: (index + 1) * (parent.width / 17)
-                color: "#000"; opacity: 0.08
             }
         }
 

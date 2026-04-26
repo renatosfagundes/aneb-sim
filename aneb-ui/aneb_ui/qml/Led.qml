@@ -1,9 +1,10 @@
-// Led.qml — domed LED with glow halo, brightness 0..1.
+// Led.qml — round 5mm-style LED viewed head-on, brightness 0..1.
 //
-// The LED looks like a colored plastic dome whether or not it's lit
-// (real LEDs have tinted clear/diffuse plastic so they read as a
-// colored body even when off). The on-state adds a wide halo, a
-// brightening core, and a sharper specular highlight.
+// Looks like a colored plastic dome: tinted body that's still visibly
+// "this color" when off, prominent bright reflection near the top-left
+// (the canonical "lit from above" highlight), a soft secondary
+// reflection on the lower-right, and a halo glow that swells with
+// brightness.
 import QtQuick 2.15
 
 Item {
@@ -16,21 +17,22 @@ Item {
     implicitWidth: 24
     implicitHeight: 24
 
-    // Outer halo, visible when on. Scales with brightness so the
-    // "glow" reads from across the panel without dominating when dim.
+    // Outer halo, visible when on. The size grows slightly with
+    // brightness so a fully-lit LED reads from across the panel.
     Rectangle {
         anchors.centerIn: parent
         width:  parent.width  * (1.6 + 0.6 * root.brightness)
         height: parent.height * (1.6 + 0.6 * root.brightness)
         radius: width / 2
         color: root.onColor
-        opacity: root.brightness * 0.5
+        opacity: root.brightness * 0.55
         visible: root.brightness > 0.05
     }
 
-    // LED body — a tinted dome. Off state is the dark version of the
-    // on color (so it still reads as "this is a red LED" even unlit);
-    // on state interpolates toward a bright saturated core.
+    // LED dome body — three-stop vertical gradient suggests a
+    // top-lit sphere. Both ends bias toward the on-color as
+    // brightness rises so the unlit dome still reads as "this is
+    // a [red/green/blue] LED" rather than a neutral grey blob.
     Rectangle {
         id: body
         anchors.fill: parent
@@ -38,15 +40,21 @@ Item {
         border.color: "#050505"
         border.width: 1
         gradient: Gradient {
-            // Top is brighter (where light would catch a dome), bottom
-            // is darker (in shadow). Both sides bias toward onColor as
-            // brightness rises.
             GradientStop {
                 position: 0.0
                 color: Qt.rgba(
-                    Math.min(1, root.onColor.r * (0.55 + 0.45 * root.brightness)),
-                    Math.min(1, root.onColor.g * (0.55 + 0.45 * root.brightness)),
-                    Math.min(1, root.onColor.b * (0.55 + 0.45 * root.brightness)),
+                    Math.min(1, root.onColor.r * (0.65 + 0.35 * root.brightness)),
+                    Math.min(1, root.onColor.g * (0.65 + 0.35 * root.brightness)),
+                    Math.min(1, root.onColor.b * (0.65 + 0.35 * root.brightness)),
+                    1
+                )
+            }
+            GradientStop {
+                position: 0.55
+                color: Qt.rgba(
+                    root.onColor.r * (0.40 + 0.55 * root.brightness),
+                    root.onColor.g * (0.40 + 0.55 * root.brightness),
+                    root.onColor.b * (0.40 + 0.55 * root.brightness),
                     1
                 )
             }
@@ -62,28 +70,40 @@ Item {
         }
     }
 
-    // Inner ring shadow — gives the dome a recessed-edge feel so the
-    // body reads as 3D rather than a flat sticker.
+    // Inner ring shadow — gives the dome a recessed-edge feel.
     Rectangle {
         anchors.fill: parent
         anchors.margins: 1
         radius: width / 2
         color: "transparent"
-        border.color: Qt.rgba(0, 0, 0, 0.35)
+        border.color: Qt.rgba(0, 0, 0, 0.30)
         border.width: 1
     }
 
-    // Specular highlight — a small bright crescent toward the top
-    // left, suggesting an overhead light. Always faintly visible to
-    // sell the dome shape; intensifies when the LED lights up.
+    // Primary specular reflection — bright crescent toward the
+    // top-left, suggesting an overhead light. Always faintly
+    // visible to sell the dome shape; intensifies when lit.
     Rectangle {
-        x: parent.width  * 0.18
-        y: parent.height * 0.14
-        width:  parent.width  * 0.40
-        height: parent.height * 0.32
+        x: parent.width  * 0.16
+        y: parent.height * 0.12
+        width:  parent.width  * 0.42
+        height: parent.height * 0.30
         radius: Math.min(width, height) / 2
         color: "white"
-        opacity: 0.18 + 0.55 * root.brightness
+        opacity: 0.40 + 0.50 * root.brightness
+    }
+
+    // Secondary rim reflection — small bright spot lower-right
+    // gives the dome a curved feel by hinting at light wrapping
+    // around the back edge.
+    Rectangle {
+        x: parent.width  * 0.62
+        y: parent.height * 0.62
+        width:  parent.width  * 0.18
+        height: parent.height * 0.14
+        radius: Math.min(width, height) / 2
+        color: "white"
+        opacity: 0.18 + 0.25 * root.brightness
     }
 
     Behavior on brightness { NumberAnimation { duration: 80 } }

@@ -1,6 +1,14 @@
 // EcuPanel.qml — composes one ECU's worth of widgets, using
 // QtQuick.Layouts so children shrink gracefully when the window
 // resizes and never overflow the panel.
+//
+// Layout from top to bottom:
+//   - Title row     : ECU label + CAN status indicator
+//   - Nano          : the board illustration
+//   - Hardware row  : LCD on the left, buzzer on the right
+//   - Pots row      : four trim pots
+//   - I/O row       : 2x2 grid of breakout LEDs + 2x2 grid of buttons
+//   - Serial console: fills the remaining vertical space
 import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
@@ -26,7 +34,7 @@ Item {
         anchors.margins: 8
         spacing: 4
 
-        // ---- Title row: label + breakout LEDs + CAN status ---------
+        // ---- Title row: label + CAN status -------------------------
         RowLayout {
             Layout.fillWidth: true
             Layout.preferredHeight: 22
@@ -40,42 +48,17 @@ Item {
                 font.bold: true
                 Layout.preferredWidth: 60
             }
-            // Breakout LEDs — DOUT0 / DOUT1 / built-in L. The buzzer
-            // moved out into its own widget below the Nano.
-            RowLayout {
-                spacing: 4
-                Layout.fillWidth: false
-                Led {
-                    Layout.preferredWidth: 14; Layout.preferredHeight: 14
-                    onColor: "#22cc44"
-                    brightness: nano.level("PD3")
-                                + (nano.duty("PD3") * (1 - nano.level("PD3")))
-                }
-                Led {
-                    Layout.preferredWidth: 14; Layout.preferredHeight: 14
-                    onColor: "#22cc44"; brightness: nano.level("PD4")
-                }
-                Led {
-                    Layout.preferredWidth: 14; Layout.preferredHeight: 14
-                    onColor: "#ffaa22"
-                    brightness: nano.level("PB5")
-                                + (nano.duty("PD6") * (1 - nano.level("PB5")))
-                }
-            }
-
+            Item { Layout.fillWidth: true }   // left spacer
             CanIndicator {
                 chip: root.chip
                 Layout.preferredWidth: 200
                 Layout.preferredHeight: 22
             }
-            Item { Layout.fillWidth: true }   // right spacer
         }
 
         // ---- Nano illustration -------------------------------------
         // Height tracks the image's actual 1500x571 aspect (ratio
-        // 2.627) so the painted region exactly fills the layout cell
-        // — no top/bottom letterbox. Capped so it doesn't dominate
-        // when the panel is unusually wide.
+        // 2.627) so the painted region exactly fills the layout cell.
         ArduinoNano {
             id: nano
             chip: root.chip
@@ -85,7 +68,6 @@ Item {
             Layout.minimumHeight: 80
         }
 
-        // Bridge UART events to the Nano's TX/RX flash LEDs.
         Connections {
             target: bridge
             function onUartAppended(chip, data) {
@@ -119,36 +101,136 @@ Item {
         // ---- Pots row ----------------------------------------------
         RowLayout {
             Layout.fillWidth: true
-            Layout.preferredHeight: 78
+            Layout.preferredHeight: 60
             Layout.alignment: Qt.AlignHCenter
             spacing: 6
             Item { Layout.fillWidth: true }
             TrimPot { chip: root.chip; channel: 0; label: "AIN0  A0"
-                      Layout.preferredWidth: 50; Layout.preferredHeight: 78 }
+                      Layout.preferredWidth: 40; Layout.preferredHeight: 60 }
             TrimPot { chip: root.chip; channel: 1; label: "AIN1  A1"
-                      Layout.preferredWidth: 50; Layout.preferredHeight: 78 }
+                      Layout.preferredWidth: 40; Layout.preferredHeight: 60 }
             TrimPot { chip: root.chip; channel: 2; label: "AIN2  A2"
-                      Layout.preferredWidth: 50; Layout.preferredHeight: 78 }
+                      Layout.preferredWidth: 40; Layout.preferredHeight: 60 }
             TrimPot { chip: root.chip; channel: 3; label: "AIN3  A3"
-                      Layout.preferredWidth: 50; Layout.preferredHeight: 78 }
+                      Layout.preferredWidth: 40; Layout.preferredHeight: 60 }
             Item { Layout.fillWidth: true }
         }
 
-        // ---- Buttons row -------------------------------------------
+        // ---- I/O row: 2x2 LEDs (left) + 2x2 buttons (right) -------
+        // Mirrors the remote-flasher style: four colored output LEDs
+        // for the firmware-driven outputs and four colored input
+        // buttons for the digital inputs.
         RowLayout {
             Layout.fillWidth: true
-            Layout.preferredHeight: 54
+            Layout.preferredHeight: 88
             Layout.alignment: Qt.AlignHCenter
-            spacing: 6
+            spacing: 24
+
             Item { Layout.fillWidth: true }
-            PushButton { chip: root.chip; pin: "A4"; label: "DIN1  A4"
-                         Layout.preferredWidth: 38; Layout.preferredHeight: 54 }
-            PushButton { chip: root.chip; pin: "A5"; label: "DIN2  A5"
-                         Layout.preferredWidth: 38; Layout.preferredHeight: 54 }
-            PushButton { chip: root.chip; pin: "D9"; label: "DIN3  D9"
-                         Layout.preferredWidth: 38; Layout.preferredHeight: 54 }
-            PushButton { chip: root.chip; pin: "D8"; label: "DIN4  D8"
-                         Layout.preferredWidth: 38; Layout.preferredHeight: 54 }
+
+            // 2x2 LED grid: DOUT0, DOUT1, L (Nano on-board), LDR_LED.
+            GridLayout {
+                columns: 2
+                rowSpacing: 6
+                columnSpacing: 8
+                Layout.preferredWidth:  80
+                Layout.preferredHeight: 80
+
+                ColumnLayout {
+                    spacing: 0
+                    Layout.alignment: Qt.AlignHCenter
+                    Led {
+                        Layout.alignment: Qt.AlignHCenter
+                        Layout.preferredWidth: 22; Layout.preferredHeight: 22
+                        onColor: "#ffaa22"     // amber — DOUT0 (PD3, dimmable)
+                        brightness: nano.level("PD3")
+                                    + (nano.duty("PD3") * (1 - nano.level("PD3")))
+                    }
+                    Text {
+                        Layout.alignment: Qt.AlignHCenter
+                        text: "DOUT0"; color: "#a8d0b0"
+                        font.family: "Consolas"; font.pixelSize: 7
+                    }
+                }
+                ColumnLayout {
+                    spacing: 0
+                    Layout.alignment: Qt.AlignHCenter
+                    Led {
+                        Layout.alignment: Qt.AlignHCenter
+                        Layout.preferredWidth: 22; Layout.preferredHeight: 22
+                        onColor: "#22cc44"     // green — DOUT1 (PD4)
+                        brightness: nano.level("PD4")
+                    }
+                    Text {
+                        Layout.alignment: Qt.AlignHCenter
+                        text: "DOUT1"; color: "#a8d0b0"
+                        font.family: "Consolas"; font.pixelSize: 7
+                    }
+                }
+                ColumnLayout {
+                    spacing: 0
+                    Layout.alignment: Qt.AlignHCenter
+                    Led {
+                        Layout.alignment: Qt.AlignHCenter
+                        Layout.preferredWidth: 22; Layout.preferredHeight: 22
+                        onColor: "#ff3344"     // red — Nano on-board L LED (PB5)
+                        brightness: nano.level("PB5")
+                    }
+                    Text {
+                        Layout.alignment: Qt.AlignHCenter
+                        text: "L"; color: "#a8d0b0"
+                        font.family: "Consolas"; font.pixelSize: 7
+                    }
+                }
+                ColumnLayout {
+                    spacing: 0
+                    Layout.alignment: Qt.AlignHCenter
+                    Led {
+                        Layout.alignment: Qt.AlignHCenter
+                        Layout.preferredWidth: 22; Layout.preferredHeight: 22
+                        onColor: "#3aaaff"     // blue — LDR_LED (PD6 PWM)
+                        brightness: nano.duty("PD6")
+                    }
+                    Text {
+                        Layout.alignment: Qt.AlignHCenter
+                        text: "LDR"; color: "#a8d0b0"
+                        font.family: "Consolas"; font.pixelSize: 7
+                    }
+                }
+            }
+
+            Item { Layout.preferredWidth: 24 }   // gap between LED grid and buttons
+
+            // 2x2 button grid: DIN1..DIN4, each a different remote-cap color.
+            GridLayout {
+                columns: 2
+                rowSpacing: 4
+                columnSpacing: 6
+                Layout.preferredWidth:  100
+                Layout.preferredHeight: 88
+
+                PushButton {
+                    chip: root.chip; pin: "A4"; label: "DIN1  A4"
+                    color: "#e04a4a"            // red
+                    Layout.preferredWidth: 42; Layout.preferredHeight: 56
+                }
+                PushButton {
+                    chip: root.chip; pin: "A5"; label: "DIN2  A5"
+                    color: "#e8c440"            // yellow
+                    Layout.preferredWidth: 42; Layout.preferredHeight: 56
+                }
+                PushButton {
+                    chip: root.chip; pin: "D9"; label: "DIN3  D9"
+                    color: "#3ec85a"            // green
+                    Layout.preferredWidth: 42; Layout.preferredHeight: 56
+                }
+                PushButton {
+                    chip: root.chip; pin: "D8"; label: "DIN4  D8"
+                    color: "#3a8fe8"            // blue
+                    Layout.preferredWidth: 42; Layout.preferredHeight: 56
+                }
+            }
+
             Item { Layout.fillWidth: true }
         }
 
