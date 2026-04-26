@@ -16,6 +16,15 @@ list(GET _SIMAVR_LIB_CANDIDATES 0 SIMAVR_LIB)
 
 find_package(Threads REQUIRED)
 
+# ----- mcp2515: pure-logic static lib (no simavr dependency) ------------
+# Tests link this directly; the engine adds a small glue layer in sim_loop.c
+# that bridges simavr's SPI/GPIO/INT IRQs to this library's callbacks.
+add_library(mcp2515 STATIC
+    src/mcp2515/mcp2515.c
+)
+target_include_directories(mcp2515 PUBLIC src/mcp2515)
+
+# ----- aneb-sim: the engine binary --------------------------------------
 add_executable(aneb-sim
     src/main.c
     src/proto.c
@@ -36,6 +45,7 @@ target_include_directories(aneb-sim SYSTEM PRIVATE
 target_include_directories(aneb-sim PRIVATE src)
 
 target_link_libraries(aneb-sim PRIVATE
+    mcp2515
     ${SIMAVR_LIB}
     elf
     m
@@ -47,3 +57,21 @@ target_link_libraries(aneb-sim PRIVATE
 if(WIN32)
     target_link_libraries(aneb-sim PRIVATE ws2_32)
 endif()
+
+# ----- test_mcp2515: register/SPI/filter/loopback unit tests ----------
+enable_testing()
+
+add_executable(test_mcp2515
+    test/test_main.c
+    test/test_mcp2515_regs.c
+    test/test_mcp2515_spi.c
+    test/test_mcp2515_filters.c
+    test/test_mcp2515_loopback.c
+)
+target_include_directories(test_mcp2515 PRIVATE
+    src/mcp2515
+    test
+)
+target_link_libraries(test_mcp2515 PRIVATE mcp2515)
+
+add_test(NAME mcp2515 COMMAND test_mcp2515)
