@@ -24,6 +24,15 @@ add_library(mcp2515 STATIC
 )
 target_include_directories(mcp2515 PUBLIC src/mcp2515)
 
+# ----- can_bus: pure-logic multi-node CAN bus -----------------------
+# Routes mcp2515_frame_t between attached controllers. Pure C, depends
+# only on the mcp2515 module.
+add_library(can_bus STATIC
+    src/can_bus/can_bus.c
+)
+target_include_directories(can_bus PUBLIC src/can_bus)
+target_link_libraries(can_bus PUBLIC mcp2515)
+
 # ----- aneb-sim: the engine binary --------------------------------------
 add_executable(aneb-sim
     src/main.c
@@ -46,6 +55,7 @@ target_include_directories(aneb-sim PRIVATE src)
 
 target_link_libraries(aneb-sim PRIVATE
     mcp2515
+    can_bus
     ${SIMAVR_LIB}
     elf
     m
@@ -67,11 +77,13 @@ add_executable(test_mcp2515
     test/test_mcp2515_spi.c
     test/test_mcp2515_filters.c
     test/test_mcp2515_loopback.c
+    test/test_can_bus.c
 )
 target_include_directories(test_mcp2515 PRIVATE
     src/mcp2515
+    src/can_bus
     test
 )
-target_link_libraries(test_mcp2515 PRIVATE mcp2515)
+target_link_libraries(test_mcp2515 PRIVATE mcp2515 can_bus)
 
-add_test(NAME mcp2515 COMMAND test_mcp2515)
+add_test(NAME unit COMMAND test_mcp2515)

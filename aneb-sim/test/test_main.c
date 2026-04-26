@@ -43,6 +43,15 @@ extern int test_loopback_int_pin_asserted(void);
 extern int test_loopback_txif_set(void);
 extern int test_loopback_filtered_out(void);
 
+/* can_bus suite */
+extern int test_bus_attach(void);
+extern int test_bus_broadcast_skips_source(void);
+extern int test_bus_broadcast_to_multiple_peers(void);
+extern int test_bus_inject_no_source_skip(void);
+extern int test_bus_filter_end_to_end(void);
+extern int test_bus_mode_gating(void);
+extern int test_bus_normal_tx_through_callback(void);
+
 int main(void)
 {
     TEST_BEGIN();
@@ -82,6 +91,16 @@ int main(void)
     TEST_RUN(test_loopback_int_pin_asserted);
     TEST_RUN(test_loopback_txif_set);
     TEST_RUN(test_loopback_filtered_out);
+    fputc('\n', stderr);
+
+    fputs("can_bus     ", stderr);
+    TEST_RUN(test_bus_attach);
+    TEST_RUN(test_bus_broadcast_skips_source);
+    TEST_RUN(test_bus_broadcast_to_multiple_peers);
+    TEST_RUN(test_bus_inject_no_source_skip);
+    TEST_RUN(test_bus_filter_end_to_end);
+    TEST_RUN(test_bus_mode_gating);
+    TEST_RUN(test_bus_normal_tx_through_callback);
     fputc('\n', stderr);
 
     return TEST_END();
