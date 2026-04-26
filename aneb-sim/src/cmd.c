@@ -165,6 +165,79 @@ static int hex_decode(const char *src, size_t src_len, uint8_t *dst, size_t cap)
     return (int)out;
 }
 
+/* Map a chip id ("ecu1".."ecu4") to its MCP2515 instance via the bus
+ * attachment list. Returns NULL if the chip has no controller (e.g.
+ * "mcu") or the id doesn't exist. */
+static mcp2515_t *can_for_chip(const char *chip_id)
+{
+    can_bus_t *bus = sim_loop_bus();
+    if (!bus || !chip_id) return NULL;
+    /* The MCP2515's id is "<chip>.can1"; match by prefix. */
+    size_t n = strlen(chip_id);
+    for (int i = 0; i < bus->num_nodes; i++) {
+        mcp2515_t *m = bus->nodes[i];
+        if (m && strncmp(m->id, chip_id, n) == 0 && m->id[n] == '.') {
+            return m;
+        }
+    }
+    return NULL;
+}
+
+static const char *err_state_name(mcp2515_err_state_t s)
+{
+    switch (s) {
+    case MCP_ERR_STATE_ACTIVE:  return "active";
+    case MCP_ERR_STATE_PASSIVE: return "passive";
+    case MCP_ERR_STATE_BUSOFF:  return "bus-off";
+    }
+    return "?";
+}
+
+static void emit_state(const chip_t *c, const mcp2515_t *m)
+{
+    proto_emit_can_state(c->id,
+                         mcp2515_tec(m), mcp2515_rec(m),
+                         err_state_name(mcp2515_err_state(m)),
+                         c->cycles);
+}
+
+static void apply_force_busoff(cmd_t *cmd)
+{
+    chip_t *c = sim_loop_find(cmd->chip);
+    mcp2515_t *m = can_for_chip(cmd->chip);
+    if (!c || !m) {
+        proto_emit_log("warn", "force_busoff: no MCP2515 on chip '%s'", cmd->chip);
+        return;
+    }
+    mcp2515_force_busoff(m);
+    emit_state(c, m);
+}
+
+static void apply_can_errors(cmd_t *cmd)
+{
+    chip_t *c = sim_loop_find(cmd->chip);
+    mcp2515_t *m = can_for_chip(cmd->chip);
+    if (!c || !m) {
+        proto_emit_log("warn", "can_errors: no MCP2515 on chip '%s'", cmd->chip);
+        return;
+    }
+    if (cmd->err_tx > 0) mcp2515_inject_tx_errors(m, cmd->err_tx);
+    if (cmd->err_rx > 0) mcp2515_inject_rx_errors(m, cmd->err_rx);
+    emit_state(c, m);
+}
+
+static void apply_can_recover(cmd_t *cmd)
+{
+    chip_t *c = sim_loop_find(cmd->chip);
+    mcp2515_t *m = can_for_chip(cmd->chip);
+    if (!c || !m) {
+        proto_emit_log("warn", "can_recover: no MCP2515 on chip '%s'", cmd->chip);
+        return;
+    }
+    mcp2515_recover_busoff(m);
+    emit_state(c, m);
+}
+
 static void apply_can_inject(cmd_t *cmd)
 {
     can_bus_t *bus = sim_loop_bus();
@@ -203,11 +276,14 @@ void cmd_apply(cmd_t *cmd)
     case CMD_ADC:    apply_adc(cmd);    break;
     case CMD_UART:   apply_uart(cmd);   break;
     case CMD_LOAD:   apply_load(cmd);   break;
-    case CMD_RESET:      apply_reset(cmd);      break;
-    case CMD_CAN_INJECT: apply_can_inject(cmd); break;
-    case CMD_SPEED:      sim_loop_set_speed(cmd->speed); break;
-    case CMD_PAUSE:      sim_loop_pause_all();  break;
-    case CMD_RESUME:     sim_loop_resume_all(); break;
+    case CMD_RESET:        apply_reset(cmd);        break;
+    case CMD_CAN_INJECT:   apply_can_inject(cmd);   break;
+    case CMD_FORCE_BUSOFF: apply_force_busoff(cmd); break;
+    case CMD_CAN_ERRORS:   apply_can_errors(cmd);   break;
+    case CMD_CAN_RECOVER:  apply_can_recover(cmd);  break;
+    case CMD_SPEED:        sim_loop_set_speed(cmd->speed); break;
+    case CMD_PAUSE:        sim_loop_pause_all();    break;
+    case CMD_RESUME:       sim_loop_resume_all();   break;
     case CMD_STEP:
         /* M1: step is a stub — does a resume-pause sandwich for now.
          * Full single-stepping by cycles lands when wallclock pacing

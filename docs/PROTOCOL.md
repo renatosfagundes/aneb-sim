@@ -81,6 +81,22 @@ new `can_tx` events.
 
 `level` is one of `info`, `warn`, `error`. Logs do not carry `chip` or `ts`.
 
+### `can_state` — CAN error counters / state snapshot
+
+```json
+{"v":1,"t":"can_state","chip":"ecu2","tec":40,"rec":0,"state":"active","ts":12345}
+```
+
+| Field | Type | Notes |
+|---|---|---|
+| `tec`   | int    | Transmit Error Counter, 0–255. |
+| `rec`   | int    | Receive Error Counter, 0–255. |
+| `state` | string | One of `"active"` / `"passive"` / `"bus-off"`. Derived from EFLG. |
+
+Emitted whenever a `force_busoff`, `can_errors`, or `can_recover` command
+runs against the chip. Future expansion: emit on every threshold crossing
+without a UI poke.
+
 ---
 
 ## Commands (UI → engine)
@@ -161,6 +177,40 @@ Affects all chips simultaneously.
 
 M1 implements this as a coarse resume-tick-pause loop (granularity
 = `SIM_CYCLES_PER_TICK`). Single-cycle stepping arrives in M5.
+
+### `force_busoff` — drive an ECU's MCP2515 into bus-off
+
+```json
+{"v":1,"c":"force_busoff","chip":"ecu1"}
+```
+
+Sets TEC = 255 + EFLG.TXBO; raises ERRIF and MERRF; emits a `can_state`
+event so the UI can reflect the change. Pedagogical lever — instructors
+use this in scenario scripts to demonstrate fault recovery.
+
+### `can_errors` — inject error increments
+
+```json
+{"v":1,"c":"can_errors","chip":"ecu1","tx":4,"rx":0}
+```
+
+| Field | Type | Notes |
+|---|---|---|
+| `tx`  | int  | TX-error increments. Each adds 8 to TEC. |
+| `rx`  | int  | RX-error increments. Each adds 1 to REC. |
+
+After applying, the engine recomputes EFLG and the error state, then
+emits a `can_state` event.
+
+### `can_recover` — clear bus-off + reset counters
+
+```json
+{"v":1,"c":"can_recover","chip":"ecu1"}
+```
+
+Models the firmware-driven recovery path (mode toggle through
+Configuration). After the call, TEC = REC = 0 and the state is `active`
+again.
 
 ### `can_inject` — inject a CAN frame onto the bus
 

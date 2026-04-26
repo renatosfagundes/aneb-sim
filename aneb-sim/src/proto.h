@@ -24,12 +24,14 @@ struct mcp2515_frame;
 
 /* ----- Event emission (engine -> UI) ------------------------------------ */
 
-void proto_emit_pin   (const char *chip, const char *pin_name, int val, uint64_t ts);
-void proto_emit_pwm   (const char *chip, const char *pin_name, double duty, uint64_t ts);
-void proto_emit_uart  (const char *chip, const uint8_t *data, size_t len, uint64_t ts);
-void proto_emit_can_tx(const char *src_chip, const char *bus,
-                       const struct mcp2515_frame *f, uint64_t ts);
-void proto_emit_log   (const char *level, const char *fmt, ...);
+void proto_emit_pin     (const char *chip, const char *pin_name, int val, uint64_t ts);
+void proto_emit_pwm     (const char *chip, const char *pin_name, double duty, uint64_t ts);
+void proto_emit_uart    (const char *chip, const uint8_t *data, size_t len, uint64_t ts);
+void proto_emit_can_tx  (const char *src_chip, const char *bus,
+                         const struct mcp2515_frame *f, uint64_t ts);
+void proto_emit_can_state(const char *chip, uint8_t tec, uint8_t rec,
+                          const char *state, uint64_t ts);
+void proto_emit_log     (const char *level, const char *fmt, ...);
 
 /* ----- Command parsing (UI -> engine) ----------------------------------- */
 
@@ -43,8 +45,11 @@ typedef enum {
     CMD_SPEED,       /* wallclock multiplier (>0) */
     CMD_PAUSE,
     CMD_RESUME,
-    CMD_STEP,        /* run N cycles, then auto-pause */
-    CMD_CAN_INJECT,  /* inject a CAN frame onto the bus */
+    CMD_STEP,         /* run N cycles, then auto-pause */
+    CMD_CAN_INJECT,   /* inject a CAN frame onto the bus */
+    CMD_FORCE_BUSOFF, /* drive an ECU's MCP2515 directly into bus-off */
+    CMD_CAN_ERRORS,   /* inject N tx-or-rx error increments on a chip */
+    CMD_CAN_RECOVER,  /* clear bus-off + counters on a chip */
 } cmd_type_t;
 
 typedef struct {
@@ -65,6 +70,10 @@ typedef struct {
     bool        can_ext;
     bool        can_rtr;
     uint8_t     can_dlc;
+
+    /* Error-injection fields (CMD_CAN_ERRORS). */
+    int         err_tx;     /* TX error count to inject */
+    int         err_rx;     /* RX error count to inject */
 } cmd_t;
 
 /*

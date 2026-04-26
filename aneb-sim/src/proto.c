@@ -79,6 +79,20 @@ void proto_emit_uart(const char *chip, const uint8_t *data, size_t len, uint64_t
     pthread_mutex_unlock(&g_out_mutex);
 }
 
+void proto_emit_can_state(const char *chip, uint8_t tec, uint8_t rec,
+                          const char *state, uint64_t ts)
+{
+    pthread_mutex_lock(&g_out_mutex);
+    fprintf(stdout,
+            "{\"v\":%d,\"t\":\"can_state\",\"chip\":\"%s\","
+            "\"tec\":%u,\"rec\":%u,\"state\":\"%s\",\"ts\":%llu}\n",
+            ANEB_PROTO_VERSION, chip,
+            (unsigned)tec, (unsigned)rec, state,
+            (unsigned long long)ts);
+    fflush(stdout);
+    pthread_mutex_unlock(&g_out_mutex);
+}
+
 void proto_emit_can_tx(const char *src_chip, const char *bus,
                        const struct mcp2515_frame *f, uint64_t ts)
 {
@@ -133,8 +147,11 @@ static cmd_type_t parse_cmd_type(const char *s)
     if (!strcmp(s, "speed"))  return CMD_SPEED;
     if (!strcmp(s, "pause"))  return CMD_PAUSE;
     if (!strcmp(s, "resume")) return CMD_RESUME;
-    if (!strcmp(s, "step"))       return CMD_STEP;
-    if (!strcmp(s, "can_inject")) return CMD_CAN_INJECT;
+    if (!strcmp(s, "step"))         return CMD_STEP;
+    if (!strcmp(s, "can_inject"))   return CMD_CAN_INJECT;
+    if (!strcmp(s, "force_busoff")) return CMD_FORCE_BUSOFF;
+    if (!strcmp(s, "can_errors"))   return CMD_CAN_ERRORS;
+    if (!strcmp(s, "can_recover"))  return CMD_CAN_RECOVER;
     return CMD_UNKNOWN;
 }
 
@@ -205,6 +222,12 @@ int proto_parse_command(const char *line, cmd_t *out)
     if (cJSON_IsBool(can_rtr))   out->can_rtr = cJSON_IsTrue(can_rtr);
     const cJSON *can_dlc = cJSON_GetObjectItemCaseSensitive(root, "dlc");
     if (cJSON_IsNumber(can_dlc)) out->can_dlc = (uint8_t)can_dlc->valueint;
+
+    /* Error-injection fields (CMD_CAN_ERRORS). */
+    const cJSON *etx = cJSON_GetObjectItemCaseSensitive(root, "tx");
+    if (cJSON_IsNumber(etx)) out->err_tx = etx->valueint;
+    const cJSON *erx = cJSON_GetObjectItemCaseSensitive(root, "rx");
+    if (cJSON_IsNumber(erx)) out->err_rx = erx->valueint;
 
     const cJSON *data = cJSON_GetObjectItemCaseSensitive(root, "data");
     if (cJSON_IsString(data) && data->valuestring) {
