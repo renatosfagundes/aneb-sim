@@ -8,6 +8,7 @@
 #include "avr_ioport.h"
 #include "avr_uart.h"
 #include "avr_spi.h"
+#include "avr_timer.h"
 
 #include "can_bus.h"
 #include "chip.h"
@@ -64,6 +65,62 @@ static void on_uart_byte(struct avr_irq_t *irq, uint32_t value, void *param)
     chip_t *c = (chip_t *)param;
     uint8_t b = (uint8_t)value;
     proto_emit_uart(c->id, &b, 1, c->cycles);
+}
+
+/* PWM event glue: simavr's TIMER_IRQ_OUT_PWMn fires (filtered) with the
+ * raw OCR value whenever the firmware writes a different duty. We map
+ * each (timer, channel) tuple to the AVR pin it physically drives and
+ * emit a `pwm` event with duty = value / TOP. For the 8-bit timers
+ * (Timer 0 / Timer 2) at fast-PWM with TOP = 255 (the analogWrite()
+ * default), this is OCR / 255. */
+typedef struct {
+    chip_t  *chip;
+    char     port;
+    int      bit;
+    uint16_t top;          /* PWM TOP value */
+} pwm_ctx_t;
+
+static pwm_ctx_t g_pwm_ctx[SIM_MAX_CHIPS * 4];   /* 4 PWM channels per chip */
+static int       g_pwm_ctx_n = 0;
+
+static void on_pwm(struct avr_irq_t *irq, uint32_t value, void *param)
+{
+    (void)irq;
+    pwm_ctx_t *ctx = (pwm_ctx_t *)param;
+    double duty = (ctx->top > 0) ? (double)value / (double)ctx->top : 0.0;
+    if (duty < 0.0) duty = 0.0;
+    if (duty > 1.0) duty = 1.0;
+    proto_emit_pwm(ctx->chip->id, pin_format(ctx->port, ctx->bit),
+                   duty, ctx->chip->cycles);
+}
+
+static void wire_one_pwm(chip_t *c, char timer_letter, int pwm_index,
+                         char port, int bit, uint16_t top)
+{
+    avr_irq_t *irq = avr_io_getirq(c->avr,
+                                   AVR_IOCTL_TIMER_GETIRQ(timer_letter),
+                                   TIMER_IRQ_OUT_PWM0 + pwm_index);
+    if (!irq) return;
+    pwm_ctx_t *ctx = &g_pwm_ctx[g_pwm_ctx_n++];
+    ctx->chip = c;
+    ctx->port = port;
+    ctx->bit  = bit;
+    ctx->top  = top;
+    avr_irq_register_notify(irq, on_pwm, ctx);
+}
+
+static void wire_pwm_outputs(chip_t *c)
+{
+    /* Map each PWM channel that does not collide with our board peripheral
+     * wiring (MCP2515 SPI on PB2/PB3 disables Timer 1 OC1B and Timer 2
+     * OC2A). TOPs default to 255 (fast PWM mode that analogWrite uses). */
+    /* Timer 0: OC0A=PD6 (LDR_LED on ECU1), OC0B=PD5 (LOOP on ECU1) */
+    wire_one_pwm(c, '0', 0, 'D', 6, 255);
+    wire_one_pwm(c, '0', 1, 'D', 5, 255);
+    /* Timer 1: OC1A=PB1 (Arduino 9, free) */
+    wire_one_pwm(c, '1', 0, 'B', 1, 255);
+    /* Timer 2: OC2B=PD3 (Arduino 3 = DOUT0, dimmable LED) */
+    wire_one_pwm(c, '2', 1, 'D', 3, 255);
 }
 
 /* ----- MCP2515 <-> simavr glue ----------------------------------------
@@ -201,6 +258,9 @@ static void wire_chip_irqs(chip_t *c)
     if (uart_out) {
         avr_irq_register_notify(uart_out, on_uart_byte, c);
     }
+
+    /* PWM outputs (LDR_LED, LOOP, dimmable DOUT, etc.). */
+    wire_pwm_outputs(c);
 }
 
 /* ----- public API ------------------------------------------------------ */
