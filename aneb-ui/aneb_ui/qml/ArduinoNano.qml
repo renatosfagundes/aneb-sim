@@ -1,9 +1,16 @@
-// ArduinoNano.qml — top-down Arduino Nano in pure QML primitives.
+// ArduinoNano.qml — SVG static base + QML dynamic overlays.
 //
-// More board-like than previous passes: SMD component dots scattered
-// around the chip, visible pin legs on the TQFP package, "Arduino
-// Nano" silkscreen at the bottom edge, decoupling caps + crystal
-// drawn as discrete components.
+// The static board art comes from `qml_assets/arduino-vector.svg`
+// (viewBox 300 x 135.83). On top, QML draws:
+//   - tinted rectangles where the on-board status LEDs sit
+//     (TX / RX / L / PWR), animating with engine + UART events
+//   - small glowing dots over each header through-hole, lit when
+//     the firmware drives the corresponding AVR pin HIGH
+//
+// All overlay positions are declared as numeric constants below in
+// the SVG's native 300 x 135.83 coordinate space. Calibrate against
+// the rendered SVG by tweaking the constants — no SVG editing
+// required.
 import QtQuick 2.15
 
 Item {
@@ -38,224 +45,53 @@ Item {
         return (c && c[p]) ? c[p] : 0.0
     }
 
-    implicitWidth: 420
-    implicitHeight: 160
+    // SVG's natural aspect ratio.
+    readonly property real _svgW: 300
+    readonly property real _svgH: 135.833
+    implicitWidth: _svgW
+    implicitHeight: _svgH
 
+    // --- Stage scaled to fit the parent while preserving aspect ---
     Item {
         id: stage
-        width: 420; height: 160
+        width:  root._svgW
+        height: root._svgH
         anchors.centerIn: parent
-        scale: Math.min(root.width / 420, root.height / 160)
+        scale: Math.min(root.width / root._svgW, root.height / root._svgH)
         transformOrigin: Item.Center
 
-        // --- USB Connector (silver shielding with port slot) -------
-        Rectangle {
-            x: 0; y: 64; width: 36; height: 32; radius: 2
-            gradient: Gradient {
-                GradientStop { position: 0.0; color: "#9a9a9a" }
-                GradientStop { position: 0.4; color: "#e2e2e2" }
-                GradientStop { position: 1.0; color: "#7c7c7c" }
-            }
-            border.color: "#444"; border.width: 1
-            Rectangle {
-                anchors.centerIn: parent; width: 20; height: 14
-                color: "#101010"; border.color: "#333"; border.width: 1
-                Rectangle {                                // inner pin connector
-                    anchors.centerIn: parent
-                    width: 14; height: 4; color: "#3a3a3a"
-                }
-            }
+        // ---- Static SVG base art ---------------------------------
+        Image {
+            id: nano
+            anchors.fill: parent
+            source: "../qml_assets/arduino-vector.svg"
+            fillMode: Image.PreserveAspectFit
+            sourceSize.width:  root._svgW * 4   // crisp at high DPI
+            sourceSize.height: root._svgH * 4
+            smooth: true
+            antialiasing: true
         }
 
-        // --- PCB Body ----------------------------------------------
-        Rectangle {
-            id: pcb
-            x: 12; y: 8; width: 396; height: 144; radius: 6
-            gradient: Gradient {
-                GradientStop { position: 0.0; color: "#0a7868" }
-                GradientStop { position: 0.4; color: "#005f50" }
-                GradientStop { position: 1.0; color: "#003a30" }
-            }
-            border.color: "#001a16"; border.width: 1
+        // ---- Calibration constants (tune to the SVG) -------------
+        //
+        // First pass: rough estimates against a typical Arduino Nano
+        // top-down render at this aspect. Re-tune by looking at the
+        // rendered SVG and shifting these values.
+        readonly property var leds: ({
+            tx:  { x: 232, y:  48, color: "#ff4444" },
+            rx:  { x: 232, y:  56, color: "#ffdd44" },
+            l:   { x: 232, y:  64, color: "#ffaa22" },
+            pwr: { x: 232, y:  72, color: "#22cc44" },
+        })
 
-            // Faint horizontal traces.
-            Rectangle { x: 30; y: 38; width: 340; height: 1; color: "#00a888"; opacity: 0.18 }
-            Rectangle { x: 30; y: 102; width: 340; height: 1; color: "#00a888"; opacity: 0.18 }
+        // Header pad coordinates. Tune `topY`, `botY`, `startX`,
+        // `pitch` once against the rendered SVG; pad layout follows
+        // a regular grid in real Nano renders.
+        readonly property real padTopY: 13
+        readonly property real padBotY: 122
+        readonly property real padStartX: 22
+        readonly property real padPitch: 18.6
 
-            // "Arduino Nano" silkscreen (bottom-right corner).
-            Text {
-                anchors.bottom: parent.bottom; anchors.right: parent.right
-                anchors.bottomMargin: 18; anchors.rightMargin: 16
-                text: "Arduino  Nano"
-                color: "#d0e0d0"
-                font.family: "Consolas"; font.pixelSize: 5; font.italic: true
-            }
-        }
-
-        // --- Scattered SMD components ------------------------------
-        // Small surface-mount resistors / capacitors. Plain rectangles
-        // suggest hardware density without needing a real schematic.
-        Repeater {
-            model: [
-                { x: 50,  y: 38, w: 5, h: 2.4, c: "#1a1a1a" },
-                { x: 70,  y: 50, w: 5, h: 2.4, c: "#b39d89" },
-                { x: 95,  y: 38, w: 4, h: 2.0, c: "#1a1a1a" },
-                { x: 120, y: 48, w: 5, h: 2.4, c: "#1a1a1a" },
-                { x: 145, y: 38, w: 4, h: 2.0, c: "#b39d89" },
-                { x: 170, y: 38, w: 4, h: 2.0, c: "#1a1a1a" },
-                { x: 175, y: 110, w: 5, h: 2.4, c: "#1a1a1a" },
-                { x: 200, y: 110, w: 5, h: 2.4, c: "#b39d89" },
-                { x: 225, y: 110, w: 5, h: 2.4, c: "#1a1a1a" },
-                { x: 250, y: 110, w: 4, h: 2.0, c: "#1a1a1a" },
-                { x: 305, y: 38, w: 5, h: 2.4, c: "#1a1a1a" },
-                { x: 305, y: 110, w: 4, h: 2.0, c: "#b39d89" },
-            ]
-            Rectangle {
-                x: modelData.x; y: modelData.y
-                width: modelData.w; height: modelData.h
-                color: modelData.c; radius: 0.5
-            }
-        }
-
-        // --- ATmega328P TQFP-32 chip -------------------------------
-        Item {
-            x: 178; y: 52; width: 70; height: 56
-
-            // Faint pin legs on all four sides.
-            Repeater {
-                model: 8
-                Rectangle {
-                    x: 5 + index * 7.5; y: 1
-                    width: 1.2; height: 3; color: "#3a3a3a"
-                }
-            }
-            Repeater {
-                model: 8
-                Rectangle {
-                    x: 5 + index * 7.5; y: 52
-                    width: 1.2; height: 3; color: "#3a3a3a"
-                }
-            }
-            Repeater {
-                model: 8
-                Rectangle {
-                    x: 1; y: 5 + index * 5.7
-                    width: 3; height: 1.2; color: "#3a3a3a"
-                }
-            }
-            Repeater {
-                model: 8
-                Rectangle {
-                    x: 66; y: 5 + index * 5.7
-                    width: 3; height: 1.2; color: "#3a3a3a"
-                }
-            }
-
-            // Chip body.
-            Rectangle {
-                x: 4; y: 4; width: 62; height: 48
-                color: "#0a0a0a"
-                border.color: "#1a1a1a"; border.width: 1
-                radius: 1
-                // Top-edge bevel highlight.
-                Rectangle {
-                    x: 1; y: 1; width: parent.width - 2; height: 2
-                    gradient: Gradient {
-                        GradientStop { position: 0.0; color: "#3a3a3a" }
-                        GradientStop { position: 1.0; color: "#0a0a0a" }
-                    }
-                }
-                // Pin-1 dot.
-                Rectangle {
-                    x: 4; y: 4; width: 3.5; height: 3.5; radius: 1.75
-                    color: "#444"; border.color: "#222"; border.width: 0.5
-                }
-                Text {
-                    anchors.centerIn: parent
-                    text: "ATMEGA\n328P"
-                    color: "#bbb"
-                    font.family: "Consolas"
-                    font.pixelSize: 7
-                    font.bold: true
-                    horizontalAlignment: Text.AlignHCenter
-                }
-            }
-        }
-
-        // --- 16 MHz crystal (silver oval can) ---------------------
-        Rectangle {
-            x: 260; y: 56; width: 24; height: 14; radius: 6
-            border.color: "#888"; border.width: 1
-            gradient: Gradient {
-                GradientStop { position: 0.0; color: "#dcdcdc" }
-                GradientStop { position: 1.0; color: "#a0a0a0" }
-            }
-        }
-        Text {
-            x: 260; y: 70; width: 24
-            text: "16M"
-            color: "#d0e0d0"
-            font.family: "Consolas"; font.pixelSize: 4
-            horizontalAlignment: Text.AlignHCenter
-        }
-
-        // --- Decoupling caps (tan tantalum-ish blobs) -------------
-        Rectangle { x: 260; y: 80; width: 10; height: 9; radius: 1; color: "#c0a890"; border.color: "#806550" }
-        Rectangle { x: 274; y: 80; width: 10; height: 9; radius: 1; color: "#c0a890"; border.color: "#806550" }
-
-        // --- Reset button ------------------------------------------
-        Rectangle {
-            x: 290; y: 56; width: 14; height: 14; radius: 2
-            color: "#222"
-            border.color: "#444"; border.width: 1
-            Rectangle {
-                anchors.centerIn: parent
-                width: 8; height: 8; radius: 4
-                color: "#0a0a0a"
-            }
-        }
-        Text {
-            x: 290; y: 70; width: 14
-            text: "RST"; color: "#d0e0d0"
-            font.family: "Consolas"; font.pixelSize: 4
-            horizontalAlignment: Text.AlignHCenter
-        }
-
-        // --- ICSP header (6-pin grid in a black box) --------------
-        Rectangle {
-            x: 358; y: 60; width: 26; height: 38; radius: 2
-            color: "#0a0a0a"; border.color: "#222"; border.width: 1
-            Grid {
-                anchors.centerIn: parent
-                rows: 2; columns: 3; spacing: 3
-                Repeater {
-                    model: 6
-                    Rectangle {
-                        width: 6; height: 6; radius: 3
-                        gradient: Gradient {
-                            GradientStop { position: 0; color: "#FFD700" }
-                            GradientStop { position: 1; color: "#a07820" }
-                        }
-                        Rectangle {
-                            anchors.centerIn: parent
-                            width: 3; height: 3; radius: 1.5
-                            color: "#101010"
-                        }
-                    }
-                }
-            }
-        }
-
-        // --- On-board status LEDs (compact SMD strip) -------------
-        Column {
-            x: 322; y: 50; spacing: 5
-            OnBoardLed { color: "#ff4444"; brightness: root.txGlow; label: "TX" }
-            OnBoardLed { color: "#ffdd44"; brightness: root.rxGlow; label: "RX" }
-            OnBoardLed { color: "#ffaa22"; brightness: Math.max(root.level("PB5"), root.duty("PD6")); label: "L" }
-            OnBoardLed { color: "#22cc44"; brightness: root.power ? 1.0 : 0.0; label: "PWR" }
-        }
-
-        // --- Header rows ------------------------------------------
         readonly property var topRow: [
             { lbl: "D12", port: "PB4" }, { lbl: "D11", port: "PB3" }, { lbl: "D10", port: "PB2" },
             { lbl: "D9",  port: "PB1" }, { lbl: "D8",  port: "PB0" }, { lbl: "D7",  port: "PD7" },
@@ -271,119 +107,83 @@ Item {
             { lbl: "RST",  port: ""    }, { lbl: "GND",  port: ""    }, { lbl: "VIN",  port: ""    }
         ]
 
+        // ---- LED overlays ---------------------------------------
+        Repeater {
+            model: [
+                { key: "tx",  brightness: root.txGlow },
+                { key: "rx",  brightness: root.rxGlow },
+                { key: "l",   brightness: Math.max(root.level("PB5"), root.duty("PD6")) },
+                { key: "pwr", brightness: root.power ? 1.0 : 0.0 },
+            ]
+            Item {
+                property var cfg: stage.leds[modelData.key]
+                x: cfg.x - 3; y: cfg.y - 3
+                width: 6; height: 6
+                // Glow halo.
+                Rectangle {
+                    anchors.centerIn: parent
+                    width: 14; height: 14; radius: 7
+                    color: parent.cfg.color
+                    opacity: 0.45 * modelData.brightness
+                    visible: modelData.brightness > 0.05
+                }
+                // Tinted SMD body — only visible while bright.
+                Rectangle {
+                    anchors.fill: parent
+                    radius: 1
+                    color: parent.cfg.color
+                    opacity: modelData.brightness
+                    visible: modelData.brightness > 0.05
+                }
+                Behavior on opacity { NumberAnimation { duration: 60 } }
+            }
+        }
+
+        // ---- Header pin-HIGH overlays ----------------------------
         Repeater {
             model: stage.topRow
-            HeaderPad {
-                x: 24 + index * 26; y: 0
-                isTop: true; label: modelData.lbl; pinPort: modelData.port
+            PadOverlay {
+                x: stage.padStartX + index * stage.padPitch - 3
+                y: stage.padTopY - 3
+                pinPort: modelData.port
             }
         }
         Repeater {
             model: stage.bottomRow
-            HeaderPad {
-                x: 24 + index * 26; y: 136
-                isTop: false; label: modelData.lbl; pinPort: modelData.port
+            PadOverlay {
+                x: stage.padStartX + index * stage.padPitch - 3
+                y: stage.padBotY - 3
+                pinPort: modelData.port
             }
         }
     }
 
-    // --- Components -----------------------------------------------
-    component OnBoardLed: Item {
-        id: lc
-        property color color: "#ffaa22"
-        property real  brightness: 0.0
-        property string label: ""
-        width: 28; height: 6
-        Row {
-            spacing: 4
-            Rectangle {
-                width: 6; height: 6; radius: 1
-                color: lc.brightness > 0.1 ? lc.color : "#101010"
-                border.color: "#000"; border.width: 0.5
-                // Halo on bright.
-                Rectangle {
-                    anchors.centerIn: parent
-                    width: 14; height: 14; radius: 7
-                    color: lc.color
-                    opacity: 0.35 * lc.brightness
-                    visible: lc.brightness > 0.1
-                    z: -1
-                }
-                // Specular dot.
-                Rectangle {
-                    anchors.centerIn: parent
-                    width: 2.4; height: 2.4; radius: 1.2
-                    color: "white"; opacity: lc.brightness * 0.7
-                    visible: lc.brightness > 0.1
-                }
-            }
-            Text {
-                text: lc.label
-                color: "#e8f0e8"
-                font.family: "Consolas"
-                font.pixelSize: 5; font.bold: true
-                anchors.verticalCenter: parent.verticalCenter
-            }
-        }
-        Behavior on brightness { NumberAnimation { duration: 80 } }
-    }
-
-    component HeaderPad: Item {
-        id: hp
-        property string label: ""
+    component PadOverlay: Item {
+        id: po
         property string pinPort: ""
-        property bool   isTop: true
-        width: 14; height: 24
+        width: 6; height: 6
 
         function _level() {
-            if (!hp.pinPort) return 0
-            return Math.max(root.level(hp.pinPort), root.duty(hp.pinPort))
+            if (!po.pinPort) return 0
+            return Math.max(root.level(po.pinPort), root.duty(po.pinPort))
         }
 
+        // Halo around the pad.
         Rectangle {
-            id: pad
-            x: 0; width: 14; height: 14; radius: 7
-            y: hp.isTop ? 0 : 10
-            gradient: Gradient {
-                GradientStop { position: 0.0; color: "#FFD700" }
-                GradientStop { position: 1.0; color: "#A87814" }
-            }
-            border.color: "#503810"; border.width: 0.5
-
-            // Plated through-hole.
-            Rectangle {
-                anchors.centerIn: parent
-                width: 6; height: 6; radius: 3
-                color: "#0d0d0d"
-                // Live HIGH indicator.
-                Rectangle {
-                    anchors.centerIn: parent
-                    width: 4; height: 4; radius: 2
-                    color: "#ffd24a"
-                    opacity: hp._level() * 0.95
-                    visible: opacity > 0.05
-                    Behavior on opacity { NumberAnimation { duration: 60 } }
-                }
-            }
-            // Halo on HIGH.
-            Rectangle {
-                anchors.centerIn: parent
-                width: 20; height: 20; radius: 10
-                color: "#ffd24a"
-                opacity: hp._level() * 0.4
-                visible: hp._level() > 0.05
-                z: -1
-            }
+            anchors.centerIn: parent
+            width: 12; height: 12; radius: 6
+            color: "#ffd24a"
+            opacity: po._level() * 0.5
+            visible: po._level() > 0.05
         }
-
-        Text {
-            anchors.horizontalCenter: pad.horizontalCenter
-            y: hp.isTop ? pad.bottom + 1 : pad.top - 7
-            text: hp.label
-            color: "#f0f5ed"
-            font.pixelSize: 5
-            font.family: "Consolas"
-            font.bold: true
+        // Bright dot at the pad center.
+        Rectangle {
+            anchors.fill: parent
+            radius: 3
+            color: "#ffd24a"
+            opacity: po._level() * 0.95
+            visible: po._level() > 0.05
+            Behavior on opacity { NumberAnimation { duration: 60 } }
         }
     }
 }
