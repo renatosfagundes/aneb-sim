@@ -13,8 +13,17 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import sys
 from pathlib import Path
+
+# Force the Fusion QtQuick Controls style BEFORE importing PyQt6.
+# The Windows native style plugin shipped with the PyQt6 wheel
+# (qtquickcontrols2windowsstyleimplplugin.dll) has unsatisfied DLL
+# dependencies on a clean install, which cascades through TextArea →
+# SerialConsole → Mcu → Board ("Type X unavailable" errors). Fusion
+# is a pure-QML style with no platform plugin requirements.
+os.environ.setdefault("QT_QUICK_CONTROLS_STYLE", "Fusion")
 
 from PyQt6.QtWidgets import QApplication
 
