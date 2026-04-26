@@ -201,10 +201,22 @@ Item {
             return Math.max(root.level(po.pinPort), root.duty(po.pinPort))
         }
 
-        x: root._imgX + xNorm * root._imgW - width  / 2
-        y: root._imgY + yNorm * root._imgH - height / 2
-        width:  Math.max(6, rNorm * root._imgW * 2)
-        height: width
+        // Compute the dot's pixel-space center, then snap it to the
+        // nearest integer pixel before deriving x/y. Without rounding,
+        // a fractional center smears the dot across two pixels via
+        // antialiasing — and because Qt's rasteriser doesn't always
+        // distribute that smear symmetrically, the dot can look like
+        // it sits ~half a pixel off-center. Using a fixed even width
+        // (so width/2 is integer) keeps left/right edges aligned to
+        // the same pixel grid as the snapped center.
+        readonly property real _baseSize: rNorm * root._imgW * 2
+        readonly property int  _size: Math.max(4, Math.round(_baseSize))
+        readonly property int  _cx: Math.round(root._imgX + xNorm * root._imgW)
+        readonly property int  _cy: Math.round(root._imgY + yNorm * root._imgH)
+        x: _cx - _size / 2
+        y: _cy - _size / 2
+        width:  _size
+        height: _size
 
         // Halo when HIGH.
         Rectangle {
