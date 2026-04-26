@@ -57,8 +57,10 @@ Item {
         "bot.a3":  "PC3", "bot.a4":  "PC4", "bot.a5":  "PC5"
     })
 
-    implicitWidth:  710
-    implicitHeight: 351
+    // Match the source image's natural 1500x571 aspect ratio so the
+    // parent layout can give the widget the right space.
+    implicitWidth:  1500
+    implicitHeight: 571
 
     // ---- The PNG, aspect-fit into the widget ---------------------
     Image {
@@ -68,16 +70,20 @@ Item {
         fillMode: Image.PreserveAspectFit
         smooth: true
         antialiasing: true
-        sourceSize.width:  710 * 2     // crisp at high DPI
-        sourceSize.height: 351 * 2
+        // Don't constrain sourceSize — let Qt rasterise at the
+        // natural image size and downscale for display. Setting
+        // sourceSize to the wrong dimensions distorts overlay math
+        // because paintedWidth/Height become inconsistent with what
+        // we actually see on screen.
     }
 
     // The actual rendered area of the PNG inside the widget. With
-    // PreserveAspectFit, the image is letterboxed — overlays must
-    // anchor to this area, not the full widget bounds.
-    readonly property real _imgScale: Math.min(width / 710, height / 351)
-    readonly property real _imgW: 710 * _imgScale
-    readonly property real _imgH: 351 * _imgScale
+    // PreserveAspectFit, the image is letterboxed — overlays anchor
+    // to this area, not the full widget bounds. We read it straight
+    // from the Image element so it stays correct regardless of what
+    // the source image's native dimensions are.
+    readonly property real _imgW: nano.paintedWidth
+    readonly property real _imgH: nano.paintedHeight
     readonly property real _imgX: (width  - _imgW) / 2
     readonly property real _imgY: (height - _imgH) / 2
 
