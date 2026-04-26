@@ -358,11 +358,21 @@ static void deposit_in_rxb(mcp2515_t *m, int rxn, const mcp2515_frame_t *f, int 
     update_int_pin(m);
 }
 
+/* Whether a buffer's RXM mode admits this frame's type. RECV_ANY and
+ * RECV_ALL_FILTERED accept either; RECV_STD/RECV_EXT restrict. */
+static bool type_admitted(int rxm_mode, bool ext)
+{
+    switch (rxm_mode) {
+    case MCP_RXM_RECV_ANY:
+    case MCP_RXM_RECV_ALL_FILTERED: return true;
+    case MCP_RXM_RECV_STD:          return !ext;
+    case MCP_RXM_RECV_EXT:          return  ext;
+    default:                        return true;
+    }
+}
+
 static bool route_inbound(mcp2515_t *m, const mcp2515_frame_t *f)
 {
-    /* Per-buffer RXM mode in RXBnCTRL. RXM=11 (RECV_ANY) bypasses filtering.
-     * RXM=01 (STD only) and RXM=10 (EXT only) restrict by frame type. */
-
     int rxb0_mode = (m->regs[MCP_RXB0CTRL] & MCP_RXB0CTRL_RXM_MASK)
                   >> MCP_RXB0CTRL_RXM_SHIFT;
     int rxb1_mode = (m->regs[MCP_RXB1CTRL] & MCP_RXB1CTRL_RXM_MASK)
@@ -371,26 +381,23 @@ static bool route_inbound(mcp2515_t *m, const mcp2515_frame_t *f)
     bool rxb0_busy = (m->regs[MCP_CANINTF] & MCP_INT_RX0IF) != 0;
     bool rxb1_busy = (m->regs[MCP_CANINTF] & MCP_INT_RX1IF) != 0;
 
-    /* Try RXB0 first. */
+    /* RXB0 candidacy: not busy, type-admissible, and either RECV_ANY (no
+     * filter check) or one of RXF0/RXF1 matches. RECV_STD and RECV_EXT
+     * still apply the filters — the type check is in addition, not
+     * instead. */
     bool rxb0_takes = false;
-    int filter_idx = -1;
-    if (!rxb0_busy) {
+    int  filter_idx = -1;
+    if (!rxb0_busy && type_admitted(rxb0_mode, f->ext)) {
         if (rxb0_mode == MCP_RXM_RECV_ANY) {
             rxb0_takes = true;
             filter_idx = 0;
-        } else if (rxb0_mode == MCP_RXM_RECV_ALL_FILTERED) {
+        } else {
             int which = -1;
             int fi = find_matching_filter(m, f, &which);
             if (fi >= 0 && which == 0) {
                 rxb0_takes = true;
                 filter_idx = fi;
             }
-        }
-        /* RECV_STD / RECV_EXT: enforce frame-type restriction in addition
-         * to filters. */
-        if (rxb0_takes) {
-            if (rxb0_mode == MCP_RXM_RECV_STD && f->ext) rxb0_takes = false;
-            if (rxb0_mode == MCP_RXM_RECV_EXT && !f->ext) rxb0_takes = false;
         }
     }
 
@@ -399,10 +406,13 @@ static bool route_inbound(mcp2515_t *m, const mcp2515_frame_t *f)
         return true;
     }
 
-    /* RXB0 is busy or filters didn't match it. Try RXB1, with optional
-     * rollover (BUKT) from RXB0 if filters there matched but RXB0 was busy. */
+    /* RXB0 didn't take it. Try RXB1, with optional BUKT rollover from
+     * RXB0 (frame matched RXB0 filters but RXB0 was busy). */
+    if (!type_admitted(rxb1_mode, f->ext)) {
+        if (rxb0_busy) m->regs[MCP_EFLG] |= MCP_EFLG_RX0OVR;
+        return false;
+    }
     if (rxb1_busy) {
-        /* Both buffers occupied: overflow. */
         m->regs[MCP_EFLG] |= (rxb0_busy ? MCP_EFLG_RX0OVR : 0)
                            | MCP_EFLG_RX1OVR;
         return false;
@@ -413,7 +423,7 @@ static bool route_inbound(mcp2515_t *m, const mcp2515_frame_t *f)
     if (rxb1_mode == MCP_RXM_RECV_ANY) {
         rxb1_takes = true;
         rxb1_filter_idx = 2;
-    } else if (rxb1_mode == MCP_RXM_RECV_ALL_FILTERED) {
+    } else {
         int which = -1;
         int fi = find_matching_filter(m, f, &which);
         if (fi >= 0) {
@@ -421,15 +431,12 @@ static bool route_inbound(mcp2515_t *m, const mcp2515_frame_t *f)
                 rxb1_takes = true;
                 rxb1_filter_idx = fi - 2;     /* RXB1 filhit is 0..3 */
             } else if (which == 0 && (m->regs[MCP_RXB0CTRL] & MCP_RXB0CTRL_BUKT)) {
-                /* Rollover: RXB0 matched but is busy and BUKT is set. */
+                /* Rollover: RXB0 matched but was busy. Datasheet labels
+                 * this with FILHIT bit 2 set in RXB1CTRL — leave for M3+. */
                 rxb1_takes = true;
                 rxb1_filter_idx = fi;
             }
         }
-    }
-    if (rxb1_takes) {
-        if (rxb1_mode == MCP_RXM_RECV_STD && f->ext) rxb1_takes = false;
-        if (rxb1_mode == MCP_RXM_RECV_EXT && !f->ext) rxb1_takes = false;
     }
 
     if (rxb1_takes) {

@@ -91,14 +91,18 @@ int test_filter_exact_match_std(void)
     mcp2515_t m; mcp2515_init(&m, "t");
     set_mode_normal(&m);
 
+    /* Constrain BOTH buffers — otherwise RXB1 with its default permissive
+     * mask accepts everything and the "should NOT match" check never
+     * actually exercises filtering. */
     set_mask_std_exact(&m, 0);
+    set_mask_std_exact(&m, 1);
     set_filter_std(&m, 0, 0x123);
+    /* RXF1..RXF5 default to 0; with exact masks, only id=0 matches them. */
 
     mcp2515_frame_t hit  = make_std(0x123);
     mcp2515_frame_t miss = make_std(0x124);
 
     TEST_ASSERT(mcp2515_rx_frame(&m, &hit),  "id 0x123 should match");
-    /* Clear RX0IF so RXB0 is free again. */
     mcp2515_reg_write(&m, MCP_CANINTF, 0);
     TEST_ASSERT(!mcp2515_rx_frame(&m, &miss), "id 0x124 should NOT match");
     return 0;
@@ -123,7 +127,9 @@ int test_filter_extended_id(void)
     mcp2515_t m; mcp2515_init(&m, "t");
     set_mode_normal(&m);
 
+    /* Constrain both buffers — see test_filter_exact_match_std. */
     set_mask_ext_exact(&m, 0);
+    set_mask_ext_exact(&m, 1);
     set_filter_ext(&m, 0, 0x1ABCDEFu);
 
     mcp2515_frame_t hit  = make_ext(0x1ABCDEFu);

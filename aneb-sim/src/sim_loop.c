@@ -117,9 +117,12 @@ static void wire_mcp2515(int idx)
     chip_t    *c = &g_chips[idx];
     mcp2515_t *m = &g_can[idx];
 
-    /* Chip id is at most CHIP_ID_MAX-1 chars; ".can1" adds 5 + NUL. */
+    /* Chip id is at most CHIP_ID_MAX-1 chars; ".can1" adds 5 + NUL.
+     * Use bounded %.*s so GCC's -Wformat-truncation analyzer can prove
+     * the output fits — without the precision specifier it conservatively
+     * assumes 279 bytes for an unbounded %s. */
     char id[CHIP_ID_MAX + 8];
-    snprintf(id, sizeof(id), "%s.can1", c->id);
+    snprintf(id, sizeof(id), "%.*s.can1", (int)(CHIP_ID_MAX - 1), c->id);
     mcp2515_init(m, id);
     m->on_int = on_mcp_int;
     m->on_tx  = NULL;                      /* set by M3 bus glue */
