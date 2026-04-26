@@ -1,0 +1,12 @@
+module aneb_ui_qml
+Board         1.0 Board.qml
+ArduinoNano   1.0 ArduinoNano.qml
+Mcu           1.0 Mcu.qml
+Led           1.0 Led.qml
+TrimPot       1.0 TrimPot.qml
+PushButton    1.0 PushButton.qml
+CanIndicator  1.0 CanIndicator.qml
+CanMonitor    1.0 CanMonitor.qml
+CanInject     1.0 CanInject.qml
+SerialConsole 1.0 SerialConsole.qml
+EcuPanel      1.0 EcuPanel.qml
