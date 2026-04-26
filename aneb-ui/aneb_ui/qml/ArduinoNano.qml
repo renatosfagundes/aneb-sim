@@ -136,15 +136,20 @@ Item {
 
         visible: xNorm >= 0 && yNorm >= 0
 
-        // Render with a per-axis minimum so LEDs stay visible even
-        // when the Nano image renders small inside a tight panel.
-        // Without this floor a 0.014-norm body on a 350-px-wide image
-        // is ~5 px — barely a smudge. The 10/14 floor keeps it
-        // legible while letting larger renders scale up.
+        // Floor the *smaller* dimension at MIN_DIM and scale both
+        // axes by the same factor, so the calibrated aspect ratio
+        // (and therefore orientation) is preserved at every render
+        // size. Earlier we floored width and height independently,
+        // which flipped landscape SMD LEDs into portrait squares
+        // when the panel was tight.
+        readonly property real _baseW: wNorm * root._imgW
+        readonly property real _baseH: hNorm * root._imgH
+        readonly property real _minDim: 8
+        readonly property real _scale: Math.max(1.0, _minDim / Math.max(1, Math.min(_baseW, _baseH)))
         x: root._imgX + xNorm * root._imgW - width  / 2
         y: root._imgY + yNorm * root._imgH - height / 2
-        width:  Math.max(10, wNorm * root._imgW)
-        height: Math.max(14, hNorm * root._imgH)
+        width:  _baseW * _scale
+        height: _baseH * _scale
         transformOrigin: Item.Center
 
         // Halo (only when bright).
