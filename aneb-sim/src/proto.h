@@ -31,6 +31,10 @@ void proto_emit_can_tx  (const char *src_chip, const char *bus,
                          const struct mcp2515_frame *f, uint64_t ts);
 void proto_emit_can_state(const char *chip, uint8_t tec, uint8_t rec,
                           const char *state, uint64_t ts);
+/* lcd: full 16-char snapshot of both rows. Both pointers must be
+ * non-NULL and exactly 16 chars long (NUL-termination ignored). */
+void proto_emit_lcd      (const char *chip, const char *line0,
+                          const char *line1, uint64_t ts);
 void proto_emit_log     (const char *level, const char *fmt, ...);
 
 /* ----- Command parsing (UI -> engine) ----------------------------------- */

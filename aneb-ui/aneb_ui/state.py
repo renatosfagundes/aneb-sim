@@ -27,6 +27,7 @@ class SimState(QObject):
     uart_appended     = pyqtSignal(str, str)            # chip, decoded chunk
     can_tx_appended   = pyqtSignal(dict)                # full frame record
     can_state_changed = pyqtSignal(str, int, int, str)  # chip, tec, rec, state
+    lcd_changed       = pyqtSignal(str, str, str)        # chip, line0, line1
     log_appended      = pyqtSignal(dict)
 
     def __init__(self, parent: QObject | None = None) -> None:
@@ -38,6 +39,9 @@ class SimState(QObject):
         self._can_state: dict[str, dict[str, Any]]    = {
             c: {"tec": 0, "rec": 0, "state": "active"} for c in CHIPS
         }
+        # 16x2 LCD content per chip. Engine sends a full snapshot of
+        # both lines on every change, so no merging on this side.
+        self._lcd:       dict[str, list[str]]         = {}
         self._log:       list[dict[str, Any]]         = []
 
     # ---------- accessors --------------------------------------------
@@ -97,6 +101,18 @@ class SimState(QObject):
             chip, int(evt.get("tec", 0)), int(evt.get("rec", 0)),
             str(evt.get("state", "active")),
         )
+
+    def update_lcd(self, evt: dict) -> None:
+        chip  = evt.get("chip")
+        line0 = evt.get("line0", "")
+        line1 = evt.get("line1", "")
+        if not chip:
+            return
+        self._lcd[chip] = [str(line0), str(line1)]
+        self.lcd_changed.emit(chip, str(line0), str(line1))
+
+    def lcd_lines(self, chip: str) -> list[str]:
+        return list(self._lcd.get(chip, ["", ""]))
 
     def update_log(self, evt: dict) -> None:
         self._log.append(evt)

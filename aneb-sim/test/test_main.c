@@ -59,6 +59,16 @@ extern int test_arduino_analog_as_digital(void);
 extern int test_pin_format_round_trip(void);
 extern int test_adc_channel_parse_arduino(void);
 
+/* i2c_lcd suite */
+extern int test_lcd_init_clears_buffer(void);
+extern int test_lcd_print_after_init(void);
+extern int test_lcd_set_cursor_second_row(void);
+extern int test_lcd_clear_resets_cursor(void);
+extern int test_lcd_callback_fires_on_data_write(void);
+extern int test_lcd_non_printable_becomes_question_mark(void);
+extern int test_lcd_init_pulses_dont_corrupt_state(void);
+extern int test_lcd_unselected_address_ignored(void);
+
 /* mcp2515 errors suite */
 extern int test_initial_state_active(void);
 extern int test_inject_tx_error_increments_tec(void);
@@ -134,6 +144,17 @@ int main(void)
     TEST_RUN(test_arduino_analog_as_digital);
     TEST_RUN(test_pin_format_round_trip);
     TEST_RUN(test_adc_channel_parse_arduino);
+    fputc('\n', stderr);
+
+    fputs("i2c lcd     ", stderr);
+    TEST_RUN(test_lcd_init_clears_buffer);
+    TEST_RUN(test_lcd_print_after_init);
+    TEST_RUN(test_lcd_set_cursor_second_row);
+    TEST_RUN(test_lcd_clear_resets_cursor);
+    TEST_RUN(test_lcd_callback_fires_on_data_write);
+    TEST_RUN(test_lcd_non_printable_becomes_question_mark);
+    TEST_RUN(test_lcd_init_pulses_dont_corrupt_state);
+    TEST_RUN(test_lcd_unselected_address_ignored);
     fputc('\n', stderr);
 
     fputs("errors      ", stderr);

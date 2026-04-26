@@ -38,7 +38,6 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 from pathlib import Path
 
 from PyQt6.QtCore    import QObject, pyqtProperty, pyqtSignal, pyqtSlot
@@ -53,19 +52,8 @@ log = logging.getLogger(__name__)
 # Where calibrate-nano.py drops the JSON.
 NANO_COORDS_PATH = Path(__file__).resolve().parent / "qml_assets" / "arduino-coords.json"
 
-# Lines starting with this prefix in any chip's UART are routed to the
-# per-chip 16x2 LCD instead of (or in addition to) the serial console.
-# Format: __LCD__<row>:<col>:<text>\n
-#   row in {0, 1}
-#   col in {0..15}
-#   text up to 16 - col chars
-#
-# Example firmware code:
-#   Serial.println("__LCD__0:0:Hello, World!");
-#   Serial.println("__LCD__1:0:T = 23.4 C");
-LCD_PATTERN = re.compile(r"^__LCD__(\d+):(\d+):(.*)$")
-LCD_COLS    = 16
-LCD_ROWS    = 2
+LCD_COLS = 16
+LCD_ROWS = 2
 
 
 def _load_nano_coords() -> dict:
@@ -105,11 +93,11 @@ class QmlBridge(QObject):
         self._engine_running = False
         self._nano_coords = _load_nano_coords()
 
-        # Per-chip line buffer for LCD parsing — UART arrives in chunks
-        # so we buffer until newlines appear.
-        self._lcd_buf:   dict[str, str]            = {}
-        # Per-chip 16x2 LCD state.
-        self._lcd_lines: dict[str, list[str]]      = {}
+        # Per-chip 16x2 LCD state — sourced from `lcd` events emitted
+        # by the engine's I2C peripheral decoder. The engine sends a
+        # full snapshot of both lines on every change, so this dict
+        # just mirrors the latest snapshot per chip.
+        self._lcd_lines: dict[str, list[str]] = {}
 
         # Wire SimState's signals to our notifiers.
         state.pin_changed.connect      (self._on_pin_changed)
@@ -117,6 +105,7 @@ class QmlBridge(QObject):
         state.uart_appended.connect    (self._on_uart_appended)
         state.can_tx_appended.connect  (self._on_can_tx_appended)
         state.can_state_changed.connect(self._on_can_state_changed)
+        state.lcd_changed.connect      (self._on_lcd_changed)
 
         # Track engine running state.
         proxy.started.connect(self._on_engine_started)
@@ -132,40 +121,14 @@ class QmlBridge(QObject):
 
     def _on_uart_appended(self, chip: str, data: str):
         self.uartAppended.emit(chip, data)
-        # Side-channel: parse for __LCD__ lines and update the per-chip
-        # 16x2 LCD state. The original UART chunk still flows to the
-        # serial console — we don't suppress it, so students can debug.
-        self._parse_lcd_chunk(chip, data)
 
-    def _parse_lcd_chunk(self, chip: str, data: str) -> None:
-        buf = self._lcd_buf.get(chip, "") + data
-        # Process each complete line.
-        while "\n" in buf:
-            line, _, buf = buf.partition("\n")
-            line = line.rstrip("\r")
-            m = LCD_PATTERN.match(line)
-            if m:
-                try:
-                    row = int(m.group(1))
-                    col = int(m.group(2))
-                    text = m.group(3)
-                except ValueError:
-                    continue
-                self._lcd_write(chip, row, col, text)
-        self._lcd_buf[chip] = buf
-
-    def _lcd_write(self, chip: str, row: int, col: int, text: str) -> None:
-        if row < 0 or row >= LCD_ROWS:
-            return
-        if col < 0 or col >= LCD_COLS:
-            return
-        rows = self._lcd_lines.setdefault(chip,
-                                          [" " * LCD_COLS for _ in range(LCD_ROWS)])
-        # Pad existing row to 16, then overwrite at [col, col+len(text)].
-        existing = rows[row].ljust(LCD_COLS)[:LCD_COLS]
-        new_chars = text[: LCD_COLS - col]
-        rows[row] = (existing[:col] + new_chars
-                     + existing[col + len(new_chars):])[:LCD_COLS]
+    def _on_lcd_changed(self, chip: str, line0: str, line1: str) -> None:
+        # Engine sends a full snapshot of both rows on every visible
+        # change; pad/truncate to 16 chars so QML's column count is
+        # always consistent.
+        l0 = (line0 or "").ljust(LCD_COLS)[:LCD_COLS]
+        l1 = (line1 or "").ljust(LCD_COLS)[:LCD_COLS]
+        self._lcd_lines[chip] = [l0, l1]
         self.lcdLinesChanged.emit()
 
     def _on_can_tx_appended(self, _evt):

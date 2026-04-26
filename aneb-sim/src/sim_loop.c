@@ -9,9 +9,11 @@
 #include "avr_uart.h"
 #include "avr_spi.h"
 #include "avr_timer.h"
+#include "avr_twi.h"
 
 #include "can_bus.h"
 #include "chip.h"
+#include "i2c_lcd.h"
 #include "mcp2515.h"
 #include "pin_names.h"
 #include "proto.h"
@@ -22,6 +24,9 @@
 #define MCP_CS_BIT     2
 #define MCP_INT_PORT  'D'
 #define MCP_INT_BIT    2
+
+/* I2C 1602 LCD on every ECU at the standard PCF8574 backpack address. */
+#define LCD_I2C_ADDR   0x27
 
 /* ----- module state ---------------------------------------------------- */
 
@@ -36,6 +41,11 @@ static mcp2515_t         g_can[4];
 
 /* Single shared CAN bus (CAN1). All four ECUs are attached. */
 static can_bus_t         g_can1;
+
+/* One I2C 1602 LCD per ECU. The slave's two TWI IRQs are also kept so
+ * we can raise ACKs back at the master. */
+static i2c_lcd_t         g_lcd[4];
+static avr_irq_t        *g_lcd_irq[4];   /* base IRQ; +TWI_IRQ_INPUT/OUTPUT */
 
 /* ----- IRQ callbacks --------------------------------------------------- */
 
@@ -226,6 +236,103 @@ static void wire_mcp2515(int idx)
                    MCP_INT_PORT, MCP_INT_BIT);
 }
 
+/* ----- I2C LCD <-> simavr glue ----------------------------------------
+ *
+ * The PCF8574-backed 1602 module sits at 0x27 on each ECU's TWI bus.
+ * simavr's TWI delivers START / STOP / WRITE / READ events one byte at
+ * a time via a single IRQ value carrying msg/addr/data fields. We:
+ *
+ *   - on START whose 7-bit address matches LCD_I2C_ADDR, mark this LCD
+ *     as the selected slave and raise an ACK back at the master;
+ *   - while selected, push every WRITE byte into i2c_lcd_write_byte and
+ *     ACK each one;
+ *   - on STOP, drop the selection;
+ *   - reads are NACKed (the backpack is write-only in practice).
+ *
+ * To raise IRQs back at the AVR TWI master we allocate a 2-entry IRQ
+ * pool per LCD (the same convention simavr's i2c_eeprom example uses)
+ * and connect those to the AVR's TWI IRQs.
+ */
+static void on_lcd_changed(void *ctx, const char *line0, const char *line1)
+{
+    int idx = (int)(intptr_t)ctx;
+    if (idx < 0 || idx >= 4) return;
+    chip_t *c = &g_chips[idx];
+    proto_emit_lcd(c->id, line0, line1, c->cycles);
+}
+
+static void on_twi_msg(struct avr_irq_t *irq, uint32_t value, void *param)
+{
+    (void)irq;
+    int idx = (int)(intptr_t)param;
+    if (idx < 0 || idx >= 4) return;
+
+    avr_twi_msg_irq_t v = {.u = {.v = value}};
+    i2c_lcd_t *lcd = &g_lcd[idx];
+    avr_irq_t *to_avr = g_lcd_irq[idx] + TWI_IRQ_INPUT;
+
+    /* The "selected" flag piggy-backs on the LCD struct via the unused
+     * bits of last_byte? No — give it a small dedicated tracker. We
+     * store it in a static array indexed by chip. */
+    static bool lcd_selected[4] = {false, false, false, false};
+
+    if (v.u.twi.msg & TWI_COND_STOP) {
+        lcd_selected[idx] = false;
+    }
+    if (v.u.twi.msg & TWI_COND_START) {
+        /* Address byte: top 7 bits = slave address, LSB = R/W. */
+        uint8_t addr_7bit = (uint8_t)(v.u.twi.addr >> 1);
+        bool    is_write  = (v.u.twi.addr & 1) == 0;
+        if (addr_7bit == lcd->i2c_addr && is_write) {
+            lcd_selected[idx] = true;
+            avr_raise_irq(to_avr,
+                avr_twi_irq_msg(TWI_COND_ACK, v.u.twi.addr, 1));
+        } else {
+            lcd_selected[idx] = false;
+        }
+    }
+    if (lcd_selected[idx] && (v.u.twi.msg & TWI_COND_WRITE)) {
+        i2c_lcd_write_byte(lcd, v.u.twi.data);
+        avr_raise_irq(to_avr,
+            avr_twi_irq_msg(TWI_COND_ACK, v.u.twi.addr, 1));
+    }
+    /* Reads from the backpack are not meaningful for our model; leave
+     * them unanswered (the master will NACK after timeout). */
+}
+
+static const char *_lcd_irq_names[2] = {
+    [TWI_IRQ_INPUT]  = "8>lcd.tx",   /* slave -> AVR (ACK / read data) */
+    [TWI_IRQ_OUTPUT] = "32<lcd.rx",  /* AVR  -> slave (START/STOP/data) */
+};
+
+static void wire_lcd(int idx)
+{
+    chip_t    *c   = &g_chips[idx];
+    i2c_lcd_t *lcd = &g_lcd[idx];
+
+    char id[CHIP_ID_MAX + 8];
+    snprintf(id, sizeof(id), "%.*s.lcd", (int)(CHIP_ID_MAX - 1), c->id);
+    i2c_lcd_init(lcd, id, LCD_I2C_ADDR);
+    lcd->on_changed = on_lcd_changed;
+    lcd->ctx        = (void *)(intptr_t)idx;
+
+    /* Allocate this slave's IRQ pair and connect to the AVR's TWI. */
+    avr_irq_t *irq = avr_alloc_irq(&c->avr->irq_pool, 0, 2, _lcd_irq_names);
+    g_lcd_irq[idx] = irq;
+    avr_irq_register_notify(irq + TWI_IRQ_OUTPUT, on_twi_msg,
+                            (void *)(intptr_t)idx);
+
+    avr_irq_t *avr_twi_in  = avr_io_getirq(c->avr, AVR_IOCTL_TWI_GETIRQ('0'),
+                                           TWI_IRQ_INPUT);
+    avr_irq_t *avr_twi_out = avr_io_getirq(c->avr, AVR_IOCTL_TWI_GETIRQ('0'),
+                                           TWI_IRQ_OUTPUT);
+    if (avr_twi_in)  avr_connect_irq(irq + TWI_IRQ_INPUT,  avr_twi_in);
+    if (avr_twi_out) avr_connect_irq(avr_twi_out, irq + TWI_IRQ_OUTPUT);
+
+    proto_emit_log("info", "wired %s.lcd (I2C 0x%02x)",
+                   c->id, LCD_I2C_ADDR);
+}
+
 static void wire_chip_irqs(chip_t *c)
 {
     /* GPIO: watch PORTB / PORTC / PORTD pins 0..7 */
@@ -295,8 +402,12 @@ int sim_loop_init(void)
     for (int i = 0; i < 4; i++) {
         wire_mcp2515(i);
     }
+    /* Attach a 1602 I2C LCD to each ECU's TWI bus. The MCU has no LCD. */
+    for (int i = 0; i < 4; i++) {
+        wire_lcd(i);
+    }
     proto_emit_log("info",
-                   "sim_loop: initialized %d chips, 4 mcp2515, bus '%s'",
+                   "sim_loop: initialized %d chips, 4 mcp2515, 4 lcd, bus '%s'",
                    g_nchips, g_can1.name);
     return 0;
 }

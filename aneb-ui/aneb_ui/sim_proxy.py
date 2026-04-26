@@ -28,6 +28,7 @@ class SimProxy(QObject):
     uart_event      = pyqtSignal(dict)   # {"chip", "data", "ts"}
     can_tx_event    = pyqtSignal(dict)   # {"bus", "src", "id", "ext", "rtr", "dlc", "data", "ts"}
     can_state_event = pyqtSignal(dict)   # {"chip", "tec", "rec", "state", "ts"}
+    lcd_event       = pyqtSignal(dict)   # {"chip", "line0", "line1", "ts"}
     log_event       = pyqtSignal(dict)   # {"level", "msg"}
     raw_event       = pyqtSignal(dict)   # everything (for diagnostic panels)
     parse_error     = pyqtSignal(str)    # malformed line received
@@ -142,6 +143,7 @@ class SimProxy(QObject):
         elif t == "uart":      self.uart_event.emit(evt)
         elif t == "can_tx":    self.can_tx_event.emit(evt)
         elif t == "can_state": self.can_state_event.emit(evt)
+        elif t == "lcd":       self.lcd_event.emit(evt)
         elif t == "log":       self.log_event.emit(evt)
 
     def _on_finished(self, exit_code: int, _exit_status) -> None:

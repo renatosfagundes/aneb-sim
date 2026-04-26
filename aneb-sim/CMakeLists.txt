@@ -33,6 +33,14 @@ add_library(can_bus STATIC
 target_include_directories(can_bus PUBLIC src/can_bus)
 target_link_libraries(can_bus PUBLIC mcp2515)
 
+# ----- i2c_lcd: pure-logic PCF8574 + HD44780 1602 LCD model ---------
+# No simavr dependency. Engine glue in sim_loop.c bridges simavr's TWI
+# IRQs to this library; tests link it directly.
+add_library(i2c_lcd STATIC
+    src/i2c_lcd/i2c_lcd.c
+)
+target_include_directories(i2c_lcd PUBLIC src/i2c_lcd)
+
 # ----- aneb-sim: the engine binary --------------------------------------
 add_executable(aneb-sim
     src/main.c
@@ -56,6 +64,7 @@ target_include_directories(aneb-sim PRIVATE src)
 target_link_libraries(aneb-sim PRIVATE
     mcp2515
     can_bus
+    i2c_lcd
     ${SIMAVR_LIB}
     elf
     m
@@ -80,14 +89,16 @@ add_executable(test_mcp2515
     test/test_mcp2515_errors.c
     test/test_can_bus.c
     test/test_pin_names.c
+    test/test_i2c_lcd.c
     src/pin_names.c
 )
 target_include_directories(test_mcp2515 PRIVATE
     src
     src/mcp2515
     src/can_bus
+    src/i2c_lcd
     test
 )
-target_link_libraries(test_mcp2515 PRIVATE mcp2515 can_bus)
+target_link_libraries(test_mcp2515 PRIVATE mcp2515 can_bus i2c_lcd)
 
 add_test(NAME unit COMMAND test_mcp2515)

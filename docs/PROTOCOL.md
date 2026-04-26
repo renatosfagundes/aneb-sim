@@ -100,6 +100,40 @@ new `can_tx` events.
 
 `level` is one of `info`, `warn`, `error`. Logs do not carry `chip` or `ts`.
 
+### `lcd` — 16x2 character LCD snapshot
+
+```json
+{"v":1,"t":"lcd","chip":"ecu1","line0":"Hello, World!  ","line1":"T = 23.4 C     ","ts":12345}
+```
+
+| Field   | Type   | Notes |
+|---------|--------|-------|
+| `chip`  | string | Source chip id. |
+| `line0` | string | Top row (exactly 16 characters; padded with spaces). |
+| `line1` | string | Bottom row (exactly 16 characters; padded with spaces). |
+
+Each ECU has one HD44780-class 1602 LCD attached to its TWI bus through
+a PCF8574 I/O expander backpack at I2C address `0x27` — the standard
+"1602 I2C" wiring used by the LiquidCrystal_I2C library. The engine
+decodes the PCF8574 nibble protocol into HD44780 commands (clear, set
+DDRAM, write data) and emits one `lcd` event for every visible change.
+
+The MCU has no LCD.
+
+Firmware example (Arduino):
+
+```cpp
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+void setup() { lcd.init(); lcd.backlight(); lcd.print("Hello, World!"); }
+void loop() {}
+```
+
+Non-printable bytes written to DDRAM are surfaced as `?`. CGRAM custom
+characters are not modeled (the firmware can program them safely; the
+display will just show the underlying address as a `?`).
+
 ### `can_state` — CAN error counters / state snapshot
 
 ```json
@@ -274,35 +308,3 @@ Added in their respective milestones, all under `v:1`:
 
 ---
 
-## UI-side conventions (not engine wire format)
-
-These are parsed by the UI bridge from a chip's UART stream; the
-engine itself does not interpret them. They piggy-back on the
-existing `uart` event so no new event type is needed.
-
-### `__LCD__` — drive the per-ECU 16x2 character LCD
-
-Lines of the form
-
-    __LCD__<row>:<col>:<text>\n
-
-emitted on a chip's UART are parsed by the UI and routed to that
-chip's virtual 16x2 LCD widget instead of (or in addition to) the
-serial console.
-
-| Field  | Type | Notes |
-|---|---|---|
-| `row`  | int  | `0` (top) or `1` (bottom). |
-| `col`  | int  | Cursor start column, `0..15`. |
-| `text` | str  | Up to `16 - col` characters; longer text is truncated. |
-
-Example firmware (Arduino):
-
-```cpp
-Serial.println("__LCD__0:0:Hello, World!");
-Serial.println("__LCD__1:0:T = 23.4 C");
-```
-
-The engine still emits a normal `uart` event with the raw line, so
-the serial console shows it too — useful for debugging. Other UART
-output (anything not matching the prefix) flows through unchanged.

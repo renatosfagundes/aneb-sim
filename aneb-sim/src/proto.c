@@ -117,6 +117,22 @@ void proto_emit_can_tx(const char *src_chip, const char *bus,
     pthread_mutex_unlock(&g_out_mutex);
 }
 
+void proto_emit_lcd(const char *chip, const char *line0, const char *line1,
+                    uint64_t ts)
+{
+    if (!chip || !line0 || !line1) return;
+    pthread_mutex_lock(&g_out_mutex);
+    fprintf(stdout,
+            "{\"v\":%d,\"t\":\"lcd\",\"chip\":\"%s\",\"line0\":\"",
+            ANEB_PROTO_VERSION, chip);
+    emit_str(stdout, line0);
+    fprintf(stdout, "\",\"line1\":\"");
+    emit_str(stdout, line1);
+    fprintf(stdout, "\",\"ts\":%llu}\n", (unsigned long long)ts);
+    fflush(stdout);
+    pthread_mutex_unlock(&g_out_mutex);
+}
+
 void proto_emit_log(const char *level, const char *fmt, ...)
 {
     char buf[1024];

@@ -65,6 +65,7 @@ class QmlMainWindow(QMainWindow):
         self._proxy.uart_event      .connect(self._state.update_uart)
         self._proxy.can_tx_event    .connect(self._state.update_can_tx)
         self._proxy.can_state_event .connect(self._state.update_can_state)
+        self._proxy.lcd_event       .connect(self._state.update_lcd)
         self._proxy.log_event       .connect(self._state.update_log)
 
         # Bridge sits between SimState and QML.
