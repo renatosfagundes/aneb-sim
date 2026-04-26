@@ -34,12 +34,14 @@ Thumbs.db
 .DS_Store
 desktop.ini
 
-# Python (UI side, future)
+# Python (UI)
 __pycache__/
 *.pyc
 .venv/
 venv/
 *.egg-info/
+build/
+dist/
 .pytest_cache/
 
 # Firmware binaries — copied/symlinked at bootstrap, not committed

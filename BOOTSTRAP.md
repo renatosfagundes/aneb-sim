@@ -62,6 +62,34 @@ This installs (via `pacman`):
 
 Then it runs `make` inside `external/simavr/simavr/` to produce `libsimavr.a`.
 
+### Python 3.11 for the UI
+
+The UI targets **Python 3.11** specifically — not the most-recent 3.13/3.14.
+Install **Python 3.11.2** from
+<https://www.python.org/downloads/release/python-3112/> using the
+standard Windows installer (default options are fine — accept the
+"add to PATH" / "py launcher" checkboxes).
+
+`bootstrap.sh` detects it via `py -3.11`, creates a `.venv/` virtual
+environment, and `pip install`s the UI package into it. If Python 3.11
+isn't available the script prints a warning and skips the UI install
+(the engine still builds).
+
+### 5. Build the engine
+
+```bash
+./scripts/build.sh
+```
+
+### 6. Launch the UI
+
+```bash
+./scripts/run-ui.sh
+```
+
+The UI spawns the engine as a child process and shows live LEDs /
+buttons / serial consoles / CAN traffic for all five chips.
+
 ## 5. Build aneb-sim
 
 ```bash

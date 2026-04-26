@@ -39,7 +39,41 @@ git submodule update --init --recursive
 echo "==> Building simavr"
 make -C external/simavr/simavr RELEASE=1
 
-# ---- 5. Done --------------------------------------------------------------
+# ---- 5. Set up the UI virtual environment (Python 3.11.x) ----------------
+# We deliberately target Python 3.11 (not the most-recent 3.13/3.14) for
+# stability with PyQt6 wheels. The Windows Python launcher `py -3.11`
+# discovers a python.org install; install one from
+# https://www.python.org/downloads/release/python-3112/ if not present.
+echo "==> Setting up Python 3.11 UI virtual environment"
+PY311=""
+if py -3.11 --version >/dev/null 2>&1; then
+    PY311="py -3.11"
+elif command -v python3.11 >/dev/null 2>&1; then
+    PY311="python3.11"
+fi
+
+if [[ -z "$PY311" ]]; then
+    cat >&2 <<'EOF'
+WARN: Python 3.11.x not found.
+
+Install it from https://www.python.org/downloads/release/python-3112/
+(default install options are fine; the Windows Python launcher should
+register it automatically). Then re-run scripts/bootstrap.sh.
+
+Continuing without the UI — the engine itself will still build.
+EOF
+else
+    echo "    Found: $($PY311 --version 2>&1)"
+    $PY311 -m venv .venv
+    # shellcheck disable=SC1091
+    source .venv/Scripts/activate
+    python -m pip install --upgrade pip wheel
+    python -m pip install -e ./aneb-ui
+    deactivate
+    echo "    UI installed into .venv/. Launch with ./scripts/run-ui.sh"
+fi
+
+# ---- 6. Done --------------------------------------------------------------
 echo
 echo "Bootstrap complete."
-echo "Next: ./scripts/build.sh"
+echo "Next: ./scripts/build.sh   (then ./scripts/run-ui.sh)"
