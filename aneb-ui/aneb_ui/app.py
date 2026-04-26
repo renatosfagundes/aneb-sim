@@ -35,11 +35,80 @@ from .widgets.can_inject import CanInject
 log = logging.getLogger(__name__)
 
 
+# Global QSS theme — PCB-green dark palette so the Nano illustrations
+# and live LEDs feel like they're sitting on a real board.
+QSS_THEME = """
+QMainWindow, QWidget { background: #0a1a14; color: #cdfac0; }
+
+QGroupBox {
+    background: #102a1c;
+    border: 1px solid #3e6b4d;
+    border-radius: 6px;
+    margin-top: 12px;
+    font-weight: bold;
+    color: #b8e0a8;
+}
+QGroupBox::title {
+    subcontrol-origin: margin;
+    subcontrol-position: top left;
+    padding: 2px 8px;
+    background: #1a3a26;
+    border: 1px solid #3e6b4d;
+    border-radius: 3px;
+    color: #cdfac0;
+}
+
+QLabel { color: #cdfac0; }
+
+QPlainTextEdit, QLineEdit, QSpinBox {
+    background: #061410;
+    color: #cdfac0;
+    border: 1px solid #3e6b4d;
+    border-radius: 3px;
+    selection-background-color: #4a8a5d;
+}
+
+QPushButton {
+    background: #1c2a20;
+    color: #cdfac0;
+    border: 1px solid #4a8a5d;
+    padding: 5px 12px;
+    border-radius: 3px;
+}
+QPushButton:hover    { background: #284033; }
+QPushButton:pressed  { background: #122018; }
+
+QToolBar {
+    background: #0a1a14;
+    border-bottom: 1px solid #3e6b4d;
+    spacing: 6px;
+    padding: 4px;
+}
+QToolBar QPushButton, QToolBar QLabel {
+    margin: 0 2px;
+}
+
+QSplitter::handle { background: #1a3a26; }
+QSplitter::handle:horizontal { width: 4px; }
+QSplitter::handle:vertical   { height: 4px; }
+
+QTableWidget, QHeaderView::section {
+    background: #061410;
+    color: #cdfac0;
+    border: 1px solid #3e6b4d;
+}
+QHeaderView::section { padding: 4px; font-weight: bold; }
+
+QStatusBar { background: #0a1a14; color: #b8e0a8; }
+"""
+
+
 class MainWindow(QMainWindow):
     def __init__(self, engine_path: Path) -> None:
         super().__init__()
         self.setWindowTitle("aneb-sim — ANEB v1.1 simulator")
         self.resize(1600, 950)
+        self.setStyleSheet(QSS_THEME)
 
         self._state = SimState(self)
         self._proxy = SimProxy(engine_path, self)
@@ -55,12 +124,26 @@ class MainWindow(QMainWindow):
         self._proxy.started         .connect(lambda: self._set_engine_status("running"))
         self._proxy.stopped         .connect(self._on_engine_stopped)
 
-        # ---- chip panels ------------------------------------------------
+        # ---- chip panels: 2x2 ECU grid + MCU on the right ---------------
+        # Mirrors the physical board: ECU1 top-left, ECU2 top-right,
+        # ECU4 bottom-left, ECU3 bottom-right (matches the photo).
+        from PyQt6.QtWidgets import QGridLayout
+        ecu_grid = QGridLayout()
+        ecu_grid.setSpacing(8)
+        ecu_grid.addWidget(EcuPanel("ecu1", self._proxy, self._state, self), 0, 0)
+        ecu_grid.addWidget(EcuPanel("ecu2", self._proxy, self._state, self), 0, 1)
+        ecu_grid.addWidget(EcuPanel("ecu4", self._proxy, self._state, self), 1, 0)
+        ecu_grid.addWidget(EcuPanel("ecu3", self._proxy, self._state, self), 1, 1)
+        ecu_widget = QWidget(self)
+        ecu_widget.setLayout(ecu_grid)
+
+        # The MCU panel sits beside the ECU grid, full-height.
+        mcu_panel = McuPanel(self._proxy, self._state, self)
+
         chip_row = QHBoxLayout()
-        chip_row.setSpacing(6)
-        for ecu in ("ecu1", "ecu2", "ecu3", "ecu4"):
-            chip_row.addWidget(EcuPanel(ecu, self._proxy, self._state, self))
-        chip_row.addWidget(McuPanel(self._proxy, self._state, self))
+        chip_row.setSpacing(8)
+        chip_row.addWidget(ecu_widget, 4)
+        chip_row.addWidget(mcu_panel, 1)
 
         chip_widget = QWidget(self)
         chip_widget.setLayout(chip_row)
