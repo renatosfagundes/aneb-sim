@@ -264,7 +264,6 @@ class CalibrateWindow(QMainWindow):
 
         self.coords: dict = {}
         self.current_index: int = 0
-        self._load_existing()
 
         self.canvas = ImageCanvas(self)
 
@@ -272,6 +271,10 @@ class CalibrateWindow(QMainWindow):
         for key, _kind in ITEMS:
             self.list.addItem(QListWidgetItem(key))
         self.list.itemClicked.connect(self._on_list_clicked)
+
+        # Load any saved coordinates AFTER the list widget exists
+        # — _advance() reaches into self.list to update the selection.
+        self._load_existing()
         self._refresh_list()
 
         # Property editor.
