@@ -6,8 +6,11 @@ Run:
     .venv/Scripts/python.exe scripts/calibrate-nano.py
 
 UI:
-    - Left  : the arduino.png. Click anywhere to place the current
-              marker. Already-placed markers are shown as colored dots.
+    - Left  : the arduino.png, scaled to fit the window (large source
+              images get downsampled for display; click coordinates
+              are still recorded against the native image dimensions).
+              Click anywhere to place the current marker. Already-placed
+              markers are shown as colored dots.
     - Right : item list. Click an item to make it active (its dot
               moves on the next click). A check appears next to
               placed items.
@@ -17,29 +20,30 @@ Output:
     aneb-ui/aneb_ui/qml_assets/arduino-coords.json — every coordinate
     is normalised to image dimensions (0..1) so the QML overlay
     positions correctly at any rendered size.
-
-Why a dedicated tool: the Nano image's exact pixel layout varies per
-asset; calibrating once by clicking is faster and more accurate than
-hand-tuning constants in QML.
 """
 from __future__ import annotations
 
 import json
-import os
 import sys
 from pathlib import Path
 
-from PyQt6.QtCore    import QPointF, Qt
-from PyQt6.QtGui     import (QBrush, QColor, QImage, QPainter, QPen, QPixmap)
+from PyQt6.QtCore    import QPointF, QSize, Qt
+from PyQt6.QtGui     import (QBrush, QColor, QImage, QPainter, QPen)
 from PyQt6.QtWidgets import (
     QApplication, QHBoxLayout, QLabel, QListWidget, QListWidgetItem,
-    QMainWindow, QMessageBox, QPushButton, QVBoxLayout, QWidget,
+    QMainWindow, QMessageBox, QPushButton, QSizePolicy, QVBoxLayout, QWidget,
 )
 
 
 REPO        = Path(__file__).resolve().parent.parent
 IMAGE_PATH  = REPO / "aneb-ui" / "aneb_ui" / "qml_assets" / "arduino.png"
 COORDS_PATH = REPO / "aneb-ui" / "aneb_ui" / "qml_assets" / "arduino-coords.json"
+
+# Maximum displayed dimensions — large source images are downsampled
+# for the calibration UI but click coords are still recorded against
+# the native pixel grid.
+MAX_DISPLAY_W = 1400
+MAX_DISPLAY_H = 760
 
 
 # Items to calibrate, in click-order. Naming matches the wire-protocol
@@ -63,34 +67,46 @@ COLOR_BY_GROUP = {
 
 
 class ImageCanvas(QLabel):
-    """Image display + click-to-place. Emits coordinates via owner."""
+    """Image display + click-to-place. Stores native image, paints
+    a scaled copy, and converts mouse clicks back to native pixel
+    coordinates so the saved JSON always references the source image."""
 
     def __init__(self, owner: "CalibrateWindow") -> None:
         super().__init__()
-        self.owner   = owner
-        self.image   = QImage(str(IMAGE_PATH))
+        self.owner = owner
+        self.image = QImage(str(IMAGE_PATH))
         if self.image.isNull():
             QMessageBox.critical(None, "calibrate-nano",
                                  f"Cannot open image: {IMAGE_PATH}")
             sys.exit(2)
-        self.setMinimumSize(self.image.size())
+
+        # Compute the scaled display size that fits within MAX_DISPLAY_*.
+        sw = MAX_DISPLAY_W / self.image.width()
+        sh = MAX_DISPLAY_H / self.image.height()
+        self.disp_scale = min(1.0, sw, sh)
+        self.disp_w = int(round(self.image.width()  * self.disp_scale))
+        self.disp_h = int(round(self.image.height() * self.disp_scale))
+
+        self.setFixedSize(QSize(self.disp_w, self.disp_h))
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.setMouseTracking(True)
+        self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
 
     def paintEvent(self, _evt) -> None:    # noqa: N802
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        # Draw the image at native size, top-left aligned.
-        p.drawImage(0, 0, self.image)
+        p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+        # Draw the image scaled to display size.
+        p.drawImage(self.rect(), self.image)
 
-        # Draw markers for every placed coordinate.
+        # Draw markers — each in display-space coords.
         coords = self.owner.coords
         for key, group, name in ITEMS:
             entry = self._lookup(coords, key)
             if entry is None:
                 continue
-            x = entry["x"] * self.image.width()
-            y = entry["y"] * self.image.height()
+            x = entry["x"] * self.disp_w
+            y = entry["y"] * self.disp_h
             color = COLOR_BY_GROUP[group]
             self._draw_marker(p, x, y, color, key == self.owner.current_key())
 
@@ -99,13 +115,12 @@ class ImageCanvas(QLabel):
     def _draw_marker(self, p: QPainter, x: float, y: float,
                      color: QColor, active: bool) -> None:
         if active:
-            # Larger ring for the current item.
             p.setPen(QPen(color.lighter(150), 2))
             p.setBrush(Qt.BrushStyle.NoBrush)
-            p.drawEllipse(QPointF(x, y), 9, 9)
+            p.drawEllipse(QPointF(x, y), 11, 11)
         p.setPen(QPen(QColor("#202020"), 1))
         p.setBrush(QBrush(color))
-        p.drawEllipse(QPointF(x, y), 4, 4)
+        p.drawEllipse(QPointF(x, y), 5, 5)
 
     @staticmethod
     def _lookup(coords: dict, dotted_key: str):
@@ -121,9 +136,11 @@ class ImageCanvas(QLabel):
             return
         x = evt.position().x()
         y = evt.position().y()
-        if x < 0 or y < 0 or x >= self.image.width() or y >= self.image.height():
+        if x < 0 or y < 0 or x >= self.disp_w or y >= self.disp_h:
             return
-        self.owner.set_current_position(x, y)
+        # Normalise to image dimensions — the QML overlay multiplies
+        # back by the rendered image rect at runtime.
+        self.owner.set_current_position(x / self.disp_w, y / self.disp_h)
 
 
 class CalibrateWindow(QMainWindow):
@@ -131,12 +148,10 @@ class CalibrateWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle(f"Calibrate Nano coordinates  —  {IMAGE_PATH.name}")
 
-        # State.
         self.coords: dict = {}
         self.current_index: int = 0
         self._load_existing()
 
-        # Layout: image (left) | list (right).
         self.canvas = ImageCanvas(self)
 
         self.list = QListWidget()
@@ -149,12 +164,17 @@ class CalibrateWindow(QMainWindow):
         reset_btn = QPushButton("Reset"); reset_btn.clicked.connect(self.reset)
         load_btn  = QPushButton("Reload from disk"); load_btn.clicked.connect(self._reload)
 
+        info = QLabel(
+            f"Image: {self.canvas.image.width()} x {self.canvas.image.height()} px\n"
+            f"Display: {self.canvas.disp_w} x {self.canvas.disp_h} px "
+            f"(scale {self.canvas.disp_scale:.2f})\n"
+            f"Click a row to make it active.\n"
+            f"Click on the image to place the marker."
+        )
+        info.setStyleSheet("QLabel { color: #555; }")
+
         right = QVBoxLayout()
-        hint = QLabel("Click a row to make it active.\n"
-                      "Click on the image to place the marker.\n"
-                      "After placing, the next item activates automatically.")
-        hint.setStyleSheet("QLabel { color: #555; }")
-        right.addWidget(hint)
+        right.addWidget(info)
         right.addWidget(self.list, 1)
         right.addWidget(load_btn)
         right.addWidget(save_btn)
@@ -163,56 +183,43 @@ class CalibrateWindow(QMainWindow):
         layout = QHBoxLayout()
         layout.addWidget(self.canvas, 0)
         right_w = QWidget(); right_w.setLayout(right)
-        right_w.setMinimumWidth(220)
+        right_w.setMinimumWidth(240)
         layout.addWidget(right_w, 1)
 
         central = QWidget(); central.setLayout(layout)
         self.setCentralWidget(central)
 
-        # Match the image aspect.
-        self.resize(self.canvas.image.width() + 240,
-                    max(420, self.canvas.image.height() + 40))
-
-    # ------ state helpers ----------------------------------------------
+        self.resize(self.canvas.disp_w + 280, max(420, self.canvas.disp_h + 40))
 
     def current_key(self) -> str | None:
         if self.current_index < 0 or self.current_index >= len(ITEMS):
             return None
         return ITEMS[self.current_index][0]
 
-    def set_current_position(self, x: float, y: float) -> None:
+    def set_current_position(self, xnorm: float, ynorm: float) -> None:
         key = self.current_key()
         if key is None:
             return
-        # Insert into nested dict.
         node = self.coords
         parts = key.split(".")
         for k in parts[:-1]:
             node = node.setdefault(k, {})
-        node[parts[-1]] = {
-            "x": round(x / self.canvas.image.width(),  4),
-            "y": round(y / self.canvas.image.height(), 4),
-        }
-        # Advance to the next unplaced item.
+        node[parts[-1]] = {"x": round(xnorm, 4), "y": round(ynorm, 4)}
         self._advance()
         self._refresh_list()
         self.canvas.update()
 
     def _advance(self) -> None:
         for i in range(self.current_index + 1, len(ITEMS)):
-            key = ITEMS[i][0]
-            if ImageCanvas._lookup(self.coords, key) is None:
+            if ImageCanvas._lookup(self.coords, ITEMS[i][0]) is None:
                 self.current_index = i
                 self.list.setCurrentRow(i)
                 return
-        # Wrap around — go back to first unplaced.
         for i in range(len(ITEMS)):
-            key = ITEMS[i][0]
-            if ImageCanvas._lookup(self.coords, key) is None:
+            if ImageCanvas._lookup(self.coords, ITEMS[i][0]) is None:
                 self.current_index = i
                 self.list.setCurrentRow(i)
                 return
-        # Everything placed.
         self.current_index = len(ITEMS)
 
     def _refresh_list(self) -> None:
@@ -223,17 +230,15 @@ class CalibrateWindow(QMainWindow):
             item.setText(prefix + key)
         self.list.setCurrentRow(self.current_index)
 
-    # ------ buttons ----------------------------------------------------
-
     def _on_list_clicked(self, item: QListWidgetItem) -> None:
         self.current_index = self.list.row(item)
         self.canvas.update()
 
     def save(self) -> None:
         payload = {
-            "image": IMAGE_PATH.name,
+            "image":      IMAGE_PATH.name,
             "image_size": [self.canvas.image.width(), self.canvas.image.height()],
-            "coords": self.coords,
+            "coords":     self.coords,
         }
         COORDS_PATH.parent.mkdir(parents=True, exist_ok=True)
         COORDS_PATH.write_text(json.dumps(payload, indent=2), encoding="utf-8")
