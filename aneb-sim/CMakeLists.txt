@@ -14,21 +14,35 @@ endif()
 
 list(GET _SIMAVR_LIB_CANDIDATES 0 SIMAVR_LIB)
 
-add_executable(aneb-sim src/main.c)
+find_package(Threads REQUIRED)
 
-# SYSTEM marks simavr's headers as third-party so our -Wpedantic doesn't fire
-# on e.g. zero-size arrays in sim_avr.h.
+add_executable(aneb-sim
+    src/main.c
+    src/proto.c
+    src/chip.c
+    src/cmd.c
+    src/pin_names.c
+    src/sim_loop.c
+    third_party/cjson/cJSON.c
+)
+
+# SYSTEM marks third-party headers as not-our-problem so our -Wpedantic
+# doesn't fire on e.g. zero-size arrays in sim_avr.h.
 target_include_directories(aneb-sim SYSTEM PRIVATE
     ${SIMAVR_DIR}/simavr/sim
+    third_party/cjson
 )
+
+target_include_directories(aneb-sim PRIVATE src)
 
 target_link_libraries(aneb-sim PRIVATE
     ${SIMAVR_LIB}
     elf
     m
+    Threads::Threads
 )
 
-# simavr's GDB stub uses BSD-style sockets; on MinGW these resolve through
+# simavr's GDB stub uses BSD socket calls; on MinGW these resolve through
 # Winsock2 (ws2_32). Link unconditionally on Windows.
 if(WIN32)
     target_link_libraries(aneb-sim PRIVATE ws2_32)

@@ -1,102 +1,132 @@
 /*
- * aneb-sim — M0 smoke test
+ * aneb-sim — engine entry point (M1).
  *
- * Loads a single Intel-hex firmware into one ATmega328P core and prints
- * every GPIO pin transition on PORTB / PORTC / PORTD. No CAN, no UI, no
- * peripherals beyond GPIO — just enough to verify simavr is wired correctly
- * under MSYS2.
+ * Boots the canonical 5-chip ANEB roster, optionally pre-loads firmware
+ * via CLI flags, then enters the main loop:
  *
- * Replaced in M1 by the full multi-chip JSON engine.
+ *   1. drain the inbound command queue (filled by the stdin reader thread)
+ *   2. tick the simulation forward by one quantum
+ *   3. emit any events generated during the tick
+ *
+ * CLI flags:
+ *   --ecu1=PATH     load PATH into ecu1 at startup
+ *   --ecu2=PATH     ... ecu2
+ *   --ecu3=PATH
+ *   --ecu4=PATH
+ *   --mcu=PATH      load PATH into the MCU controller
+ *   --no-mcu        skip MCU init (useful for tests that don't need it)
+ *
+ * Once started, the engine reads JSON-Lines commands from stdin and
+ * writes JSON-Lines events to stdout. See docs/PROTOCOL.md.
  */
+#include <pthread.h>
+#include <signal.h>
 #include <stdio.h>
-#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
-#include <signal.h>
+#include <time.h>
 
-#include "sim_avr.h"
-#include "sim_hex.h"
-#include "avr_ioport.h"
+#include "cmd.h"
+#include "proto.h"
+#include "sim_loop.h"
 
-static avr_t        *g_avr  = NULL;
-static volatile int  g_done = 0;
+/* ----- stdin reader thread -------------------------------------------- */
+
+static void *stdin_reader(void *arg)
+{
+    (void)arg;
+    char line[8192];
+    while (fgets(line, sizeof(line), stdin)) {
+        /* Strip trailing newline if present. */
+        size_t n = strlen(line);
+        while (n > 0 && (line[n - 1] == '\n' || line[n - 1] == '\r')) {
+            line[--n] = '\0';
+        }
+        if (n == 0) continue;
+
+        cmd_t cmd;
+        int rc = proto_parse_command(line, &cmd);
+        if (rc != 0) {
+            proto_emit_log("warn", "parse error rc=%d on line: %s", rc, line);
+            continue;
+        }
+        if (cmd_queue_push(&cmd) != 0) {
+            proto_emit_log("warn", "command queue full, dropping cmd");
+            proto_free_command(&cmd);
+        }
+    }
+    sim_loop_request_stop();
+    return NULL;
+}
+
+/* ----- signal handling ------------------------------------------------- */
 
 static void on_sigint(int sig)
 {
     (void)sig;
-    g_done = 1;
+    sim_loop_request_stop();
 }
 
-static void on_pin_change(struct avr_irq_t *irq, uint32_t value, void *param)
-{
-    (void)irq;
-    fprintf(stdout, "PIN %s = %u\n", (const char *)param, value);
-    fflush(stdout);
-}
+/* ----- CLI arg handling ----------------------------------------------- */
 
-static void watch_port(avr_t *avr, char port_letter, const char *names[8])
+static const char *flag_value(const char *arg, const char *flag)
 {
-    for (int i = 0; i < 8; i++) {
-        avr_irq_t *irq = avr_io_getirq(avr,
-                                       AVR_IOCTL_IOPORT_GETIRQ(port_letter),
-                                       i);
-        if (irq) {
-            avr_irq_register_notify(irq, on_pin_change, (void *)names[i]);
-        }
-    }
+    size_t n = strlen(flag);
+    if (strncmp(arg, flag, n) != 0) return NULL;
+    if (arg[n] != '=') return NULL;
+    return arg + n + 1;
 }
 
 int main(int argc, char **argv)
 {
-    if (argc < 2) {
-        fprintf(stderr, "usage: %s <firmware.hex>\n", argv[0]);
-        return 2;
-    }
-    const char *hex_path = argv[1];
-
-    g_avr = avr_make_mcu_by_name("atmega328p");
-    if (!g_avr) {
-        fprintf(stderr, "error: could not create atmega328p core\n");
+    if (sim_loop_init() != 0) {
+        fprintf(stderr, "fatal: sim_loop_init failed\n");
         return 1;
     }
-    avr_init(g_avr);
-    g_avr->frequency = 16000000UL;
+    cmd_queue_init();
 
-    uint32_t base = 0, size = 0;
-    uint8_t *blob = read_ihex_file(hex_path, &size, &base);
-    if (!blob || size == 0) {
-        fprintf(stderr, "error: failed to read hex: %s\n", hex_path);
-        return 1;
+    /* Pre-load firmware specified on the command line. */
+    for (int i = 1; i < argc; i++) {
+        const char *v;
+        if      ((v = flag_value(argv[i], "--ecu1"))) chip_load_hex(sim_loop_find("ecu1"), v);
+        else if ((v = flag_value(argv[i], "--ecu2"))) chip_load_hex(sim_loop_find("ecu2"), v);
+        else if ((v = flag_value(argv[i], "--ecu3"))) chip_load_hex(sim_loop_find("ecu3"), v);
+        else if ((v = flag_value(argv[i], "--ecu4"))) chip_load_hex(sim_loop_find("ecu4"), v);
+        else if ((v = flag_value(argv[i], "--mcu")))  chip_load_hex(sim_loop_find("mcu"),  v);
+        else if (strcmp(argv[i], "--no-mcu") == 0) {
+            /* leave mcu uninitialized; harmless because chip_step
+             * returns immediately when running == false. */
+        }
+        else {
+            fprintf(stderr, "warning: unknown arg '%s'\n", argv[i]);
+        }
     }
-    if (base + size > g_avr->flashend + 1) {
-        fprintf(stderr, "error: hex too large for flash (size=%u base=0x%x)\n",
-                size, base);
-        free(blob);
-        return 1;
-    }
-    memcpy(g_avr->flash + base, blob, size);
-    free(blob);
-    g_avr->codeend = g_avr->flashend;
-    g_avr->pc      = base;
-
-    static const char *port_b[8] = {"PB0","PB1","PB2","PB3","PB4","PB5","PB6","PB7"};
-    static const char *port_c[8] = {"PC0","PC1","PC2","PC3","PC4","PC5","PC6","PC7"};
-    static const char *port_d[8] = {"PD0","PD1","PD2","PD3","PD4","PD5","PD6","PD7"};
-    watch_port(g_avr, 'B', port_b);
-    watch_port(g_avr, 'C', port_c);
-    watch_port(g_avr, 'D', port_d);
 
     signal(SIGINT, on_sigint);
 
-    fprintf(stderr, "aneb-sim smoke test: running %s\n", hex_path);
-    fprintf(stderr, "Watching PORTB, PORTC, PORTD. Ctrl-C to stop.\n");
+    pthread_t reader_tid;
+    if (pthread_create(&reader_tid, NULL, stdin_reader, NULL) != 0) {
+        fprintf(stderr, "fatal: failed to start stdin reader\n");
+        return 1;
+    }
+    pthread_detach(reader_tid);
 
-    while (!g_done) {
-        int state = avr_run(g_avr);
-        if (state == cpu_Done || state == cpu_Crashed) {
-            fprintf(stderr, "core stopped (state=%d)\n", state);
-            break;
+    proto_emit_log("info", "aneb-sim ready (proto v%d)", ANEB_PROTO_VERSION);
+
+    while (!sim_loop_should_stop()) {
+        cmd_t cmd;
+        while (cmd_queue_pop(&cmd) == 0) {
+            cmd_apply(&cmd);
+        }
+        if (!sim_loop_tick()) {
+            /* No active chips. Don't busy-spin — wait briefly for a load
+             * command from the UI, then re-check. */
+            struct timespec ts = {.tv_sec = 0, .tv_nsec = 1000000};  /* 1 ms */
+            nanosleep(&ts, NULL);
         }
     }
+
+    proto_emit_log("info", "aneb-sim shutting down");
+    sim_loop_shutdown();
     return 0;
 }
