@@ -231,17 +231,18 @@ Item {
             width:  parent.width  * 1.8
             height: parent.height * 1.8
             radius: width / 2
-            color: "#ffd24a"
+            color: "#3cff5a"
             opacity: po._level() * 0.5
             visible: po._level() > 0.05
         }
         // Pad dot — always visible. Faint when LOW so you can see
         // every calibrated pad even before any firmware drives a pin;
-        // bright amber when the firmware drives the pin HIGH.
+        // bright green when the firmware drives the pin HIGH (matches
+        // the breakout-LED convention used elsewhere in the panel).
         Rectangle {
             anchors.fill: parent
             radius: width / 2
-            color: po._level() > 0.05 ? "#ffd24a" : "#1a1a1a"
+            color: po._level() > 0.05 ? "#3cff5a" : "#1a1a1a"
             opacity: po._level() > 0.05
                 ? Math.max(0.95 * po._level(), 0.4)
                 : 0.35
