@@ -16,7 +16,9 @@ list(GET _SIMAVR_LIB_CANDIDATES 0 SIMAVR_LIB)
 
 add_executable(aneb-sim src/main.c)
 
-target_include_directories(aneb-sim PRIVATE
+# SYSTEM marks simavr's headers as third-party so our -Wpedantic doesn't fire
+# on e.g. zero-size arrays in sim_avr.h.
+target_include_directories(aneb-sim SYSTEM PRIVATE
     ${SIMAVR_DIR}/simavr/sim
 )
 
@@ -25,3 +27,9 @@ target_link_libraries(aneb-sim PRIVATE
     elf
     m
 )
+
+# simavr's GDB stub uses BSD-style sockets; on MinGW these resolve through
+# Winsock2 (ws2_32). Link unconditionally on Windows.
+if(WIN32)
+    target_link_libraries(aneb-sim PRIVATE ws2_32)
+endif()
