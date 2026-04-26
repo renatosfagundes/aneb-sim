@@ -53,8 +53,8 @@ Item {
             chip: "mcu"
             power: bridge && bridge.engineRunning
             Layout.fillWidth: true
-            Layout.preferredHeight: Math.min(width * (160.0 / 420.0), 180)
-            Layout.minimumHeight: 80
+            Layout.preferredHeight: Math.min(width * (160.0 / 420.0), 140)
+            Layout.minimumHeight: 70
         }
         Connections {
             target: bridge

@@ -6,8 +6,8 @@ import QtQuick.Layouts 1.15
 
 Item {
     id: root
-    width:  1700
-    height: 1000
+    // No explicit width/height — QQuickWidget sets the size via
+    // SizeRootObjectToView so the QML respects the host window.
 
     Rectangle { anchors.fill: parent; color: "#9fbfd0" }
     Image {

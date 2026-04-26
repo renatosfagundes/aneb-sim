@@ -1,13 +1,9 @@
-// TrimPot.qml — two-layer composition.
+// TrimPot.qml — circular trim pot drawn entirely in QML primitives.
 //
-// Layer 1 (static): trimpot_body.png — blue plastic body with the
-// solder pads. The center is a transparent hole where the screw sits.
-// Layer 2 (rotating): trimpot_screw.png — just the brass slotted disc,
-// centered, square aspect, rotated to indicate the current value.
-//
-// If the assets are missing, falls back to QML primitives so the UI
-// still functions — the body becomes a flat blue square and the screw
-// becomes a brass disc with a black slot.
+// Body is a static blue circle with a brass center disc; only the
+// dark slot inside the brass rotates to indicate the value. Avoids
+// the diamond-corner problem that hits when you rotate a square asset
+// around its center, and removes the asset-image dependency.
 import QtQuick 2.15
 
 Item {
@@ -16,7 +12,7 @@ Item {
     property string chip:    ""
     property int    channel: 0
     property string label:   "AIN0"
-    property int    adcValue: 0
+    property int    adcValue: 0           // 0..1023 — internal state
     property int    minValue: 0
     property int    maxValue: 1023
 
@@ -25,90 +21,70 @@ Item {
 
     readonly property real _angle: -135 + (adcValue / 1023.0) * 270
 
-    // ---- Body (static) ---------------------------------------------
-    Image {
-        id: bodyImage
+    // ---- Body (blue plastic) --------------------------------------
+    Rectangle {
+        id: body
+        width: parent.width
+        height: parent.width
         anchors.top: parent.top
         anchors.horizontalCenter: parent.horizontalCenter
-        width:  parent.width
-        height: parent.width
-        source: "../qml_assets/trimpot_body.png"
-        smooth: true
-        antialiasing: true
-        fillMode: Image.PreserveAspectFit
-    }
-    // Fallback body (only shown if the asset is missing).
-    Rectangle {
-        anchors.fill: bodyImage
-        visible: bodyImage.status !== Image.Ready
         radius: width / 2
+
         gradient: Gradient {
             GradientStop { position: 0.0; color: "#3d8fc4" }
             GradientStop { position: 1.0; color: "#114a78" }
         }
         border.color: "#082030"; border.width: 1
-    }
 
-    // ---- Rotating screw --------------------------------------------
-    Image {
-        id: screwImage
-        anchors.centerIn: bodyImage
-        width:  bodyImage.width  * 0.50
-        height: bodyImage.height * 0.50
-        source: "../qml_assets/trimpot_screw.png"
-        smooth: true
-        antialiasing: true
-        fillMode: Image.PreserveAspectFit
-        rotation: root._angle
-        Behavior on rotation { NumberAnimation { duration: 60 } }
-    }
-    // Fallback screw (only shown if asset missing).
-    Item {
-        anchors.fill: screwImage
-        visible: screwImage.status !== Image.Ready
-        rotation: root._angle
-        Behavior on rotation { NumberAnimation { duration: 60 } }
+        // Brass center disc.
         Rectangle {
-            anchors.fill: parent
+            anchors.centerIn: parent
+            width:  parent.width  * 0.56
+            height: parent.height * 0.56
             radius: width / 2
             gradient: Gradient {
                 GradientStop { position: 0.0; color: "#e8c878" }
                 GradientStop { position: 1.0; color: "#806030" }
             }
             border.color: "#403018"; border.width: 1
-        }
-        Rectangle {
-            anchors.centerIn: parent
-            width:  parent.width * 0.78
-            height: parent.height * 0.18
-            radius: 1
-            color: "#1a1a1a"
+
+            // Rotating slot — the only thing that moves with the value.
+            Rectangle {
+                anchors.centerIn: parent
+                width:  parent.width  * 0.78
+                height: parent.height * 0.18
+                radius: 1
+                color: "#1a1a1a"
+                rotation: root._angle
+                transformOrigin: Item.Center
+                Behavior on rotation { NumberAnimation { duration: 60 } }
+            }
         }
     }
 
-    // ---- Labels -----------------------------------------------------
+    // ---- Labels ---------------------------------------------------
     Text {
-        anchors.top: bodyImage.bottom
-        anchors.topMargin: 2
+        anchors.top: body.bottom
+        anchors.topMargin: 1
         anchors.horizontalCenter: parent.horizontalCenter
         text: root.adcValue
         color: "#cdfac0"
         font.family: "Consolas"
-        font.pixelSize: 11
+        font.pixelSize: 10
         font.bold: true
     }
     Text {
-        anchors.top: bodyImage.bottom
-        anchors.topMargin: 16
+        anchors.top: body.bottom
+        anchors.topMargin: 13
         anchors.horizontalCenter: parent.horizontalCenter
         text: root.label
         color: "#a8d0b0"
-        font.pixelSize: 9
+        font.pixelSize: 8
     }
 
-    // ---- Input ------------------------------------------------------
+    // ---- Input ----------------------------------------------------
     MouseArea {
-        anchors.fill: bodyImage
+        anchors.fill: body
         cursorShape: Qt.SizeVerCursor
         property real startY: 0
         property int  startVal: 0
