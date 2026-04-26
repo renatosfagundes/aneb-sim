@@ -1,0 +1,53 @@
+# Build outputs
+/build/
+*.o
+*.obj
+*.exe
+*.a
+*.lib
+*.dll
+*.pdb
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+compile_commands.json
+
+# simavr build artifacts (built in-tree under external/simavr/simavr/)
+external/simavr/simavr/run_avr*
+external/simavr/simavr/libsimavr*
+external/simavr/simavr/*.o
+external/simavr/simavr/*.d
+external/simavr/simavr/obj-*
+external/simavr/examples/
+
+# Editors / IDEs
+.vscode/
+.idea/
+*.swp
+*~
+.cache/
+
+# OS clutter
+Thumbs.db
+.DS_Store
+desktop.ini
+
+# Python (UI side, future)
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+
+# Firmware binaries — copied/symlinked at bootstrap, not committed
+firmware/examples/*.hex
+firmware/mcu/*.hex
+!firmware/examples/.gitkeep
+!firmware/mcu/.gitkeep
+
+# Local config
+*.local
+.env
