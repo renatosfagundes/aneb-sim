@@ -19,6 +19,7 @@ import logging
 from pathlib import Path
 
 from PyQt6.QtCore import Qt
+from PyQt6.QtGui  import QGuiApplication
 from PyQt6.QtWidgets import (
     QFileDialog, QHBoxLayout, QLabel, QMainWindow, QMenuBar,
     QPushButton, QSplitter, QStatusBar, QToolBar, QVBoxLayout, QWidget,
@@ -107,7 +108,19 @@ class MainWindow(QMainWindow):
     def __init__(self, engine_path: Path) -> None:
         super().__init__()
         self.setWindowTitle("aneb-sim — ANEB v1.1 simulator")
-        self.resize(1600, 950)
+        # Fit to the screen's available area (taskbar excluded) — never
+        # open larger than the actual monitor.
+        screen = QGuiApplication.primaryScreen()
+        avail = screen.availableGeometry() if screen else None
+        if avail is not None:
+            self.resize(min(1600, int(avail.width()  * 0.95)),
+                        min(950,  int(avail.height() * 0.95)))
+            self.move(
+                avail.left() + (avail.width()  - self.width())  // 2,
+                avail.top()  + (avail.height() - self.height()) // 2,
+            )
+        else:
+            self.resize(1400, 800)
         self.setStyleSheet(QSS_THEME)
 
         self._state = SimState(self)

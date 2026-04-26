@@ -13,6 +13,7 @@ import logging
 from pathlib import Path
 
 from PyQt6.QtCore         import QUrl
+from PyQt6.QtGui          import QGuiApplication
 from PyQt6.QtQuickWidgets import QQuickWidget
 from PyQt6.QtWidgets      import QMainWindow
 
@@ -30,10 +31,28 @@ class QmlMainWindow(QMainWindow):
     def __init__(self, engine_path: Path) -> None:
         super().__init__()
         self.setWindowTitle("aneb-sim — ANEB v1.1 simulator")
-        self.resize(1700, 1000)
-        # Below this size the layout can't fit four ECU panels + the
-        # MCU column without overlap; clamp instead of letting Qt clip.
-        self.setMinimumSize(1280, 760)
+
+        # Fit the window to the screen's available area (excludes the
+        # taskbar) — never start larger than the monitor. We aim for
+        # 1700x1000 if room exists, otherwise 92% of available space.
+        screen = QGuiApplication.primaryScreen()
+        avail = screen.availableGeometry() if screen else None
+        if avail is not None:
+            target_w = min(1700, int(avail.width()  * 0.95))
+            target_h = min(1000, int(avail.height() * 0.95))
+            min_w = min(1280, int(avail.width()  * 0.80))
+            min_h = min(760,  int(avail.height() * 0.80))
+        else:
+            target_w, target_h = 1400, 800
+            min_w, min_h = 1100, 680
+        self.setMinimumSize(min_w, min_h)
+        self.resize(target_w, target_h)
+        # Center on the available area.
+        if avail is not None:
+            self.move(
+                avail.left() + (avail.width()  - self.width())  // 2,
+                avail.top()  + (avail.height() - self.height()) // 2,
+            )
 
         # Engine + state pipeline (identical to app.py).
         self._state = SimState(self)
