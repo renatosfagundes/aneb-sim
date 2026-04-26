@@ -98,50 +98,29 @@ Item {
             Item { Layout.preferredWidth: 8 }
         }
 
-        // ---- Pots row ----------------------------------------------
+        // ---- I/O row: LEDs (left) + Pots (center) + Buttons (right) -
+        // One row holds every input and output control so vertical
+        // space isn't wasted on a separate trimpot row. LEDs anchor to
+        // the left edge, buttons to the right, and the four trimpots
+        // float in the middle gap.
         RowLayout {
             Layout.fillWidth: true
-            Layout.preferredHeight: 60
-            Layout.alignment: Qt.AlignHCenter
-            spacing: 6
-            Item { Layout.fillWidth: true }
-            TrimPot { chip: root.chip; channel: 0; label: "AIN0  A0"
-                      Layout.preferredWidth: 40; Layout.preferredHeight: 60 }
-            TrimPot { chip: root.chip; channel: 1; label: "AIN1  A1"
-                      Layout.preferredWidth: 40; Layout.preferredHeight: 60 }
-            TrimPot { chip: root.chip; channel: 2; label: "AIN2  A2"
-                      Layout.preferredWidth: 40; Layout.preferredHeight: 60 }
-            TrimPot { chip: root.chip; channel: 3; label: "AIN3  A3"
-                      Layout.preferredWidth: 40; Layout.preferredHeight: 60 }
-            Item { Layout.fillWidth: true }
-        }
+            Layout.preferredHeight: 120
+            spacing: 8
 
-        // ---- I/O row: 2x2 LEDs (left) + 2x2 buttons (right) -------
-        // Mirrors the remote-flasher style: four colored output LEDs
-        // for the firmware-driven outputs and four colored input
-        // buttons for the digital inputs.
-        RowLayout {
-            Layout.fillWidth: true
-            Layout.preferredHeight: 88
-            Layout.alignment: Qt.AlignHCenter
-            spacing: 24
-
-            Item { Layout.fillWidth: true }
-
-            // 2x2 LED grid: DOUT0, DOUT1, L (Nano on-board), LDR_LED.
+            // 2x2 LED grid: DOUT0 amber, DOUT1 green, L red, LDR blue.
             GridLayout {
                 columns: 2
                 rowSpacing: 6
                 columnSpacing: 8
-                Layout.preferredWidth:  80
-                Layout.preferredHeight: 80
+                Layout.alignment: Qt.AlignVCenter
 
                 ColumnLayout {
                     spacing: 0
                     Layout.alignment: Qt.AlignHCenter
                     Led {
                         Layout.alignment: Qt.AlignHCenter
-                        Layout.preferredWidth: 22; Layout.preferredHeight: 22
+                        Layout.preferredWidth: 24; Layout.preferredHeight: 24
                         onColor: "#ffaa22"     // amber — DOUT0 (PD3, dimmable)
                         brightness: nano.level("PD3")
                                     + (nano.duty("PD3") * (1 - nano.level("PD3")))
@@ -157,7 +136,7 @@ Item {
                     Layout.alignment: Qt.AlignHCenter
                     Led {
                         Layout.alignment: Qt.AlignHCenter
-                        Layout.preferredWidth: 22; Layout.preferredHeight: 22
+                        Layout.preferredWidth: 24; Layout.preferredHeight: 24
                         onColor: "#22cc44"     // green — DOUT1 (PD4)
                         brightness: nano.level("PD4")
                     }
@@ -172,7 +151,7 @@ Item {
                     Layout.alignment: Qt.AlignHCenter
                     Led {
                         Layout.alignment: Qt.AlignHCenter
-                        Layout.preferredWidth: 22; Layout.preferredHeight: 22
+                        Layout.preferredWidth: 24; Layout.preferredHeight: 24
                         onColor: "#ff3344"     // red — Nano on-board L LED (PB5)
                         brightness: nano.level("PB5")
                     }
@@ -187,7 +166,7 @@ Item {
                     Layout.alignment: Qt.AlignHCenter
                     Led {
                         Layout.alignment: Qt.AlignHCenter
-                        Layout.preferredWidth: 22; Layout.preferredHeight: 22
+                        Layout.preferredWidth: 24; Layout.preferredHeight: 24
                         onColor: "#3aaaff"     // blue — LDR_LED (PD6 PWM)
                         brightness: nano.duty("PD6")
                     }
@@ -199,15 +178,30 @@ Item {
                 }
             }
 
-            Item { Layout.preferredWidth: 24 }   // gap between LED grid and buttons
+            Item { Layout.fillWidth: true }   // expanding spacer
+
+            // Pots row floats in the middle of the I/O row.
+            RowLayout {
+                spacing: 6
+                Layout.alignment: Qt.AlignVCenter
+                TrimPot { chip: root.chip; channel: 0; label: "AIN0  A0"
+                          Layout.preferredWidth: 40; Layout.preferredHeight: 60 }
+                TrimPot { chip: root.chip; channel: 1; label: "AIN1  A1"
+                          Layout.preferredWidth: 40; Layout.preferredHeight: 60 }
+                TrimPot { chip: root.chip; channel: 2; label: "AIN2  A2"
+                          Layout.preferredWidth: 40; Layout.preferredHeight: 60 }
+                TrimPot { chip: root.chip; channel: 3; label: "AIN3  A3"
+                          Layout.preferredWidth: 40; Layout.preferredHeight: 60 }
+            }
+
+            Item { Layout.fillWidth: true }   // expanding spacer
 
             // 2x2 button grid: DIN1..DIN4, each a different remote-cap color.
             GridLayout {
                 columns: 2
                 rowSpacing: 4
                 columnSpacing: 6
-                Layout.preferredWidth:  100
-                Layout.preferredHeight: 88
+                Layout.alignment: Qt.AlignVCenter
 
                 PushButton {
                     chip: root.chip; pin: "A4"; label: "DIN1  A4"
@@ -230,8 +224,6 @@ Item {
                     Layout.preferredWidth: 42; Layout.preferredHeight: 56
                 }
             }
-
-            Item { Layout.fillWidth: true }
         }
 
         // ---- Serial console — fills remaining space ----------------
