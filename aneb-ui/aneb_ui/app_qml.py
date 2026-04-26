@@ -38,13 +38,16 @@ class QmlMainWindow(QMainWindow):
         screen = QGuiApplication.primaryScreen()
         avail = screen.availableGeometry() if screen else None
         if avail is not None:
-            target_w = min(1700, int(avail.width()  * 0.95))
-            target_h = min(1000, int(avail.height() * 0.95))
-            min_w = min(1280, int(avail.width()  * 0.80))
-            min_h = min(760,  int(avail.height() * 0.80))
+            # Leave generous breathing room around the window so the
+            # Windows taskbar / title bar / borders don't push content
+            # off-screen. 85% of the available area is comfortable.
+            target_w = min(1500, int(avail.width()  * 0.85))
+            target_h = min(900,  int(avail.height() * 0.85))
+            min_w = min(1180, int(avail.width()  * 0.70))
+            min_h = min(700,  int(avail.height() * 0.70))
         else:
-            target_w, target_h = 1400, 800
-            min_w, min_h = 1100, 680
+            target_w, target_h = 1300, 780
+            min_w, min_h = 1100, 660
         self.setMinimumSize(min_w, min_h)
         self.resize(target_w, target_h)
         # Center on the available area.

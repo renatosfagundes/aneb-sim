@@ -49,10 +49,21 @@ Item {
         }
 
         ArduinoNano {
+            id: mcuNano
             chip: "mcu"
+            power: bridge && bridge.engineRunning
             Layout.fillWidth: true
             Layout.preferredHeight: Math.min(width * (160.0 / 420.0), 180)
             Layout.minimumHeight: 80
+        }
+        Connections {
+            target: bridge
+            function onUartAppended(chip, data) {
+                if (chip === "mcu") mcuNano.pulseTx()
+            }
+            function onUartSent(chip) {
+                if (chip === "mcu") mcuNano.pulseRx()
+            }
         }
 
         SerialConsole {

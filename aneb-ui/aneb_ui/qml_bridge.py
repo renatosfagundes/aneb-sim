@@ -57,7 +57,8 @@ class QmlBridge(QObject):
 
     # Per-event signals carrying the new payload, for QML widgets that
     # want streaming (serial console).
-    uartAppended = pyqtSignal(str, str)   # chip, data
+    uartAppended = pyqtSignal(str, str)   # chip, data — engine -> UI
+    uartSent     = pyqtSignal(str)        # chip      — UI -> engine
 
     def __init__(self, state: SimState, proxy: SimProxy,
                  parent: QObject | None = None) -> None:
@@ -140,6 +141,8 @@ class QmlBridge(QObject):
     @pyqtSlot(str, str)
     def sendUart(self, chip: str, text: str) -> None:
         self._proxy.send_command({"c": "uart", "chip": chip, "data": text})
+        # Notify the Nano illustration so its RX LED flashes briefly.
+        self.uartSent.emit(chip)
 
     @pyqtSlot(str, str, bool, bool, int)
     def injectCan(self, id_str: str, data_hex: str,

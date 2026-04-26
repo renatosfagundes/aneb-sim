@@ -80,9 +80,23 @@ Item {
         ArduinoNano {
             id: nano
             chip: root.chip
+            // PWR lights up only when the engine is alive — proxy for
+            // "the chip has VCC". Real Nano semantics, simulator-style.
+            power: bridge && bridge.engineRunning
             Layout.fillWidth: true
             Layout.preferredHeight: Math.min(width * (160.0 / 420.0), 200)
             Layout.minimumHeight: 80
+        }
+
+        // Bridge UART events to the Nano's TX/RX flash LEDs.
+        Connections {
+            target: bridge
+            function onUartAppended(chip, data) {
+                if (chip === root.chip) nano.pulseTx()
+            }
+            function onUartSent(chip) {
+                if (chip === root.chip) nano.pulseRx()
+            }
         }
 
         // ---- Pots row ----------------------------------------------

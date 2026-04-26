@@ -20,8 +20,8 @@ Item {
     property int    minValue: 0
     property int    maxValue: 1023
 
-    implicitWidth:  60
-    implicitHeight: 92
+    implicitWidth:  50
+    implicitHeight: 78
 
     readonly property real _angle: -135 + (adcValue / 1023.0) * 270
 
