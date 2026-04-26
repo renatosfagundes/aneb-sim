@@ -7,10 +7,19 @@
 #include "sim_avr.h"
 #include "avr_ioport.h"
 #include "avr_uart.h"
+#include "avr_spi.h"
 
 #include "chip.h"
+#include "mcp2515.h"
 #include "pin_names.h"
 #include "proto.h"
+
+/* Board wiring per ECU: ANEB v1.1 has CS=PB2 (Arduino pin 10) and
+ * INT=PD2 (Arduino INT0) for the CAN1 MCP2515 controller. */
+#define MCP_CS_PORT   'B'
+#define MCP_CS_BIT     2
+#define MCP_INT_PORT  'D'
+#define MCP_INT_BIT    2
 
 /* ----- module state ---------------------------------------------------- */
 
@@ -19,6 +28,9 @@ static int               g_nchips     = 0;
 static atomic_bool       g_stop_req   = false;
 static atomic_bool       g_paused_all = false;
 static double            g_speed      = 1.0;
+
+/* One MCP2515 per ECU (4); MCU has none. Indexed by chip index 0..3. */
+static mcp2515_t         g_can[4];
 
 /* ----- IRQ callbacks --------------------------------------------------- */
 
@@ -48,6 +60,91 @@ static void on_uart_byte(struct avr_irq_t *irq, uint32_t value, void *param)
     chip_t *c = (chip_t *)param;
     uint8_t b = (uint8_t)value;
     proto_emit_uart(c->id, &b, 1, c->cycles);
+}
+
+/* ----- MCP2515 <-> simavr glue ----------------------------------------
+ *
+ * One MCP2515 model per ECU, attached to:
+ *   - the AVR's SPI peripheral (master TX byte triggers the model;
+ *     model returns a byte that we feed back as master RX);
+ *   - the CS GPIO pin (PB2) so we know when transactions begin and end;
+ *   - the INT0 GPIO pin (PD2), which the model drives low when CANINTF
+ *     bits are set and any are masked in CANINTE.
+ *
+ * Each callback uses the chip index (0..3) as its userdata so we can
+ * dispatch back to the right MCP2515 instance and AVR core.
+ */
+static void on_mcp_spi_byte(struct avr_irq_t *irq, uint32_t value, void *param)
+{
+    (void)irq;
+    int idx = (int)(intptr_t)param;
+    if (idx < 0 || idx >= 4) return;
+    chip_t    *c = &g_chips[idx];
+    mcp2515_t *m = &g_can[idx];
+
+    uint8_t out = mcp2515_spi_byte(m, (uint8_t)(value & 0xFF));
+
+    avr_irq_t *spi_out = avr_io_getirq(c->avr,
+                                       AVR_IOCTL_SPI_GETIRQ('0'),
+                                       SPI_IRQ_OUTPUT);
+    if (spi_out) avr_raise_irq(spi_out, out);
+}
+
+static void on_mcp_cs_change(struct avr_irq_t *irq, uint32_t value, void *param)
+{
+    (void)irq;
+    int idx = (int)(intptr_t)param;
+    if (idx < 0 || idx >= 4) return;
+    mcp2515_t *m = &g_can[idx];
+    if (value == 0) mcp2515_cs_low(m);
+    else            mcp2515_cs_high(m);
+}
+
+static void on_mcp_int(void *ctx, int asserted)
+{
+    int idx = (int)(intptr_t)ctx;
+    if (idx < 0 || idx >= 4) return;
+    chip_t *c = &g_chips[idx];
+    avr_irq_t *int_pin = avr_io_getirq(c->avr,
+                                       AVR_IOCTL_IOPORT_GETIRQ(MCP_INT_PORT),
+                                       MCP_INT_BIT);
+    /* INT is active LOW: asserted=1 means drive pin low (=0). */
+    if (int_pin) avr_raise_irq(int_pin, asserted ? 0 : 1);
+}
+
+static void wire_mcp2515(int idx)
+{
+    chip_t    *c = &g_chips[idx];
+    mcp2515_t *m = &g_can[idx];
+
+    char id[16];
+    snprintf(id, sizeof(id), "%s.can1", c->id);
+    mcp2515_init(m, id);
+    m->on_int = on_mcp_int;
+    m->on_tx  = NULL;                      /* set by M3 bus glue */
+    m->ctx    = (void *)(intptr_t)idx;
+
+    /* SPI: each AVR-master TX byte triggers our model. */
+    avr_irq_t *spi_in = avr_io_getirq(c->avr,
+                                      AVR_IOCTL_SPI_GETIRQ('0'),
+                                      SPI_IRQ_INPUT);
+    if (spi_in) {
+        avr_irq_register_notify(spi_in, on_mcp_spi_byte,
+                                (void *)(intptr_t)idx);
+    }
+
+    /* CS: edge changes drive transaction boundaries. */
+    avr_irq_t *cs = avr_io_getirq(c->avr,
+                                  AVR_IOCTL_IOPORT_GETIRQ(MCP_CS_PORT),
+                                  MCP_CS_BIT);
+    if (cs) {
+        avr_irq_register_notify(cs, on_mcp_cs_change,
+                                (void *)(intptr_t)idx);
+    }
+
+    proto_emit_log("info", "wired %s.can1 (CS=P%c%d INT=P%c%d)",
+                   c->id, MCP_CS_PORT, MCP_CS_BIT,
+                   MCP_INT_PORT, MCP_INT_BIT);
 }
 
 static void wire_chip_irqs(chip_t *c)
@@ -107,7 +204,12 @@ int sim_loop_init(void)
         wire_chip_irqs(&g_chips[i]);
         g_nchips++;
     }
-    proto_emit_log("info", "sim_loop: initialized %d chips", g_nchips);
+    /* Attach an MCP2515 to each ECU (indices 0..3). The MCU at index 4
+     * has no CAN controller. */
+    for (int i = 0; i < 4; i++) {
+        wire_mcp2515(i);
+    }
+    proto_emit_log("info", "sim_loop: initialized %d chips, 4 mcp2515", g_nchips);
     return 0;
 }
 
