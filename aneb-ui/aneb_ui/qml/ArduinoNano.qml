@@ -124,36 +124,43 @@ Item {
 
         visible: xNorm >= 0 && yNorm >= 0
 
-        // Anchor to the rendered image area, not the widget.
+        // Real SMD LED bodies on a Nano are rectangular, ~2x as tall
+        // as they are wide (typical 0805/1206 package, vertical
+        // orientation in the LED strip next to the chip).
         x: root._imgX + xNorm * root._imgW - width  / 2
         y: root._imgY + yNorm * root._imgH - height / 2
-        width: 14; height: 14
+        width:  8
+        height: 14
 
-        // Halo.
+        // Soft halo around the LED when bright. Slightly bigger
+        // than the body so the glow extends past the package edges.
         Rectangle {
             anchors.centerIn: parent
-            width: 24; height: 24; radius: 12
+            width:  parent.width  * 2.4
+            height: parent.height * 2.0
+            radius: Math.min(width, height) / 2
             color: lo.color
             opacity: 0.5 * lo.brightness
             visible: lo.brightness > 0.05
         }
-        // Body.
+        // SMD body — rounded-rectangle, NOT a circle.
         Rectangle {
             anchors.fill: parent
-            radius: width / 2
+            radius: 1.5
             color: lo.color
             opacity: lo.brightness
             visible: lo.brightness > 0.05
             border.color: "#1a1a1a"; border.width: 1
-            // Specular dot.
+            // Specular highlight on the upper-left of the body.
             Rectangle {
                 anchors.top: parent.top; anchors.left: parent.left
-                anchors.topMargin: parent.height * 0.18
-                anchors.leftMargin: parent.width * 0.18
-                width: parent.width * 0.30; height: parent.height * 0.30
-                radius: width / 2
+                anchors.topMargin:  parent.height * 0.10
+                anchors.leftMargin: parent.width  * 0.18
+                width:  parent.width  * 0.40
+                height: parent.height * 0.18
+                radius: 1
                 color: "white"
-                opacity: lo.brightness * 0.7
+                opacity: lo.brightness * 0.6
             }
         }
         Behavior on opacity { NumberAnimation { duration: 60 } }
