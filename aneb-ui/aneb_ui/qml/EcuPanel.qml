@@ -72,15 +72,17 @@ Item {
         }
 
         // ---- Nano illustration -------------------------------------
-        // Aspect-locked, capped so it doesn't dominate when the window
-        // is tall but narrow.
+        // Height tracks the image's actual 1500x571 aspect (ratio
+        // 2.627) so the painted region exactly fills the layout cell
+        // — no top/bottom letterbox. Capped so it doesn't dominate
+        // when the panel is unusually wide.
         ArduinoNano {
             id: nano
             chip: root.chip
             power: bridge && bridge.engineRunning
             Layout.fillWidth: true
-            Layout.preferredHeight: Math.min(width * (160.0 / 420.0), 140)
-            Layout.minimumHeight: 70
+            Layout.preferredHeight: Math.min(width / (1500.0 / 571.0), 180)
+            Layout.minimumHeight: 80
         }
 
         // Bridge UART events to the Nano's TX/RX flash LEDs.

@@ -209,8 +209,15 @@ Item {
         // it sits ~half a pixel off-center. Using a fixed even width
         // (so width/2 is integer) keeps left/right edges aligned to
         // the same pixel grid as the snapped center.
+        // Force the size to be even, so width/2 stays an integer
+        // and the bounding-box edges align to the same pixel grid as
+        // the snapped center. An odd size (e.g. 5 px) would mean
+        // x = _cx - 2.5, putting the rectangle on half-pixel
+        // boundaries and causing Qt's antialiasing to render the
+        // left/right edges with subtly different intensities — the
+        // dot then *looks* offset even though its center is correct.
         readonly property real _baseSize: rNorm * root._imgW * 2
-        readonly property int  _size: Math.max(4, Math.round(_baseSize))
+        readonly property int  _size: Math.max(4, 2 * Math.round(_baseSize / 2))
         readonly property int  _cx: Math.round(root._imgX + xNorm * root._imgW)
         readonly property int  _cy: Math.round(root._imgY + yNorm * root._imgH)
         x: _cx - _size / 2
