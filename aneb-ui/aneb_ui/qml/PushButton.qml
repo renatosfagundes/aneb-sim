@@ -20,8 +20,8 @@ Item {
 
     readonly property bool _visiblyDown: _down || (latching && _latched)
 
-    implicitWidth:  60
-    implicitHeight: 80
+    implicitWidth:  46
+    implicitHeight: 66
 
     // ---- Frame (static) --------------------------------------------
     Image {
