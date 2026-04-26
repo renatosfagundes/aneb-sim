@@ -59,7 +59,7 @@ if(WIN32)
 endif()
 
 # ----- test_mcp2515: register/SPI/filter/loopback unit tests ----------
-enable_testing()
+# enable_testing() is called in the root CMakeLists.
 
 add_executable(test_mcp2515
     test/test_main.c

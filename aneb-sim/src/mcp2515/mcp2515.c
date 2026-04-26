@@ -45,11 +45,6 @@ static int txbuf_base(int n)
     return base[n & 0x3];
 }
 
-static int rxbuf_base(int n)
-{
-    return n == 0 ? MCP_RXB0CTRL : MCP_RXB1CTRL;
-}
-
 /* ----- lifecycle ----------------------------------------------------- */
 
 void mcp2515_init(mcp2515_t *m, const char *id)

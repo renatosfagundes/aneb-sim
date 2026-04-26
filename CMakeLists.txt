@@ -15,4 +15,8 @@ endif()
 
 add_compile_options(-Wall -Wextra -Wpedantic -Wno-unused-parameter)
 
+# enable_testing() must be in the top-level CMakeLists for ctest to
+# discover tests registered in subdirectories.
+enable_testing()
+
 add_subdirectory(aneb-sim)

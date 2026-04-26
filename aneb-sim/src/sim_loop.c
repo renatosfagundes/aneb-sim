@@ -117,7 +117,8 @@ static void wire_mcp2515(int idx)
     chip_t    *c = &g_chips[idx];
     mcp2515_t *m = &g_can[idx];
 
-    char id[16];
+    /* Chip id is at most CHIP_ID_MAX-1 chars; ".can1" adds 5 + NUL. */
+    char id[CHIP_ID_MAX + 8];
     snprintf(id, sizeof(id), "%s.can1", c->id);
     mcp2515_init(m, id);
     m->on_int = on_mcp_int;
