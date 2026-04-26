@@ -123,8 +123,6 @@ Item {
         id: lo
         property real xNorm: -1
         property real yNorm: -1
-        // Body size in normalised image coords (separate from the
-        // outer Item's width/height so we can compute pixels here).
         property real wNorm: 0.014
         property real hNorm: 0.018
         property real brightness: 0
@@ -132,15 +130,18 @@ Item {
 
         visible: xNorm >= 0 && yNorm >= 0
 
-        // Anchor at the rendered image rect, not the widget bounds.
-        // Width / height come from wNorm / hNorm × the rendered image.
+        // Render with a per-axis minimum so LEDs stay visible even
+        // when the Nano image renders small inside a tight panel.
+        // Without this floor a 0.014-norm body on a 350-px-wide image
+        // is ~5 px — barely a smudge. The 10/14 floor keeps it
+        // legible while letting larger renders scale up.
         x: root._imgX + xNorm * root._imgW - width  / 2
         y: root._imgY + yNorm * root._imgH - height / 2
-        width:  Math.max(2, wNorm * root._imgW)
-        height: Math.max(2, hNorm * root._imgH)
+        width:  Math.max(10, wNorm * root._imgW)
+        height: Math.max(14, hNorm * root._imgH)
         transformOrigin: Item.Center
 
-        // Halo around the LED.
+        // Halo (only when bright).
         Rectangle {
             anchors.centerIn: parent
             width:  parent.width  * 2.4
@@ -150,14 +151,17 @@ Item {
             opacity: 0.5 * lo.brightness
             visible: lo.brightness > 0.05
         }
-        // SMD body — rounded-rectangle.
+        // SMD body — always visible. Dim grey when off so the
+        // calibrated position is recognizable; colored at brightness
+        // when on.
         Rectangle {
             anchors.fill: parent
             radius: 1.5
-            color: lo.color
-            opacity: lo.brightness
-            visible: lo.brightness > 0.05
-            border.color: "#1a1a1a"; border.width: 1
+            color: lo.brightness > 0.05 ? lo.color : "#2a2a2a"
+            opacity: lo.brightness > 0.05 ? lo.brightness : 0.55
+            border.color: "#101010"; border.width: 1
+            Behavior on color   { ColorAnimation  { duration: 60 } }
+            Behavior on opacity { NumberAnimation { duration: 60 } }
             Rectangle {
                 anchors.top: parent.top; anchors.left: parent.left
                 anchors.topMargin:  parent.height * 0.10
@@ -167,9 +171,9 @@ Item {
                 radius: 1
                 color: "white"
                 opacity: lo.brightness * 0.6
+                visible: lo.brightness > 0.05
             }
         }
-        Behavior on opacity { NumberAnimation { duration: 60 } }
     }
 
     component PadOverlay: Item {
@@ -188,10 +192,10 @@ Item {
 
         x: root._imgX + xNorm * root._imgW - width  / 2
         y: root._imgY + yNorm * root._imgH - height / 2
-        width:  Math.max(3, rNorm * root._imgW * 2)
+        width:  Math.max(6, rNorm * root._imgW * 2)
         height: width
 
-        // Halo.
+        // Halo when HIGH.
         Rectangle {
             anchors.centerIn: parent
             width:  parent.width  * 1.8
@@ -201,13 +205,18 @@ Item {
             opacity: po._level() * 0.5
             visible: po._level() > 0.05
         }
-        // Bright dot.
+        // Pad dot — always visible. Faint when LOW so you can see
+        // every calibrated pad even before any firmware drives a pin;
+        // bright amber when the firmware drives the pin HIGH.
         Rectangle {
             anchors.fill: parent
             radius: width / 2
-            color: "#ffd24a"
-            opacity: po._level() * 0.95
-            visible: po._level() > 0.05
+            color: po._level() > 0.05 ? "#ffd24a" : "#1a1a1a"
+            opacity: po._level() > 0.05
+                ? Math.max(0.95 * po._level(), 0.4)
+                : 0.35
+            border.color: "#0a0a0a"; border.width: 0.5
+            Behavior on color   { ColorAnimation  { duration: 60 } }
             Behavior on opacity { NumberAnimation { duration: 60 } }
         }
     }
