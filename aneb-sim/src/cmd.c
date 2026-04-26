@@ -87,16 +87,23 @@ static void apply_adc(cmd_t *cmd)
         proto_emit_log("warn", "adc: unknown chip '%s'", cmd->chip);
         return;
     }
-    if (cmd->channel < 0 || cmd->channel > 7) {
-        proto_emit_log("warn", "adc: channel %d out of range", cmd->channel);
+
+    /* Channel resolution: prefer numeric `ch` field, else parse `pin`
+     * as an Arduino-style "A0".."A7" alias. */
+    int ch = cmd->channel;
+    if (ch == 0 && cmd->pin[0]) {
+        int parsed = adc_channel_parse(cmd->pin);
+        if (parsed >= 0) ch = parsed;
+    }
+    if (ch < 0 || ch > 7) {
+        proto_emit_log("warn", "adc: channel %d out of range", ch);
         return;
     }
     avr_irq_t *irq = avr_io_getirq(c->avr,
                                    AVR_IOCTL_ADC_GETIRQ,
-                                   ADC_IRQ_ADC0 + cmd->channel);
+                                   ADC_IRQ_ADC0 + ch);
     if (!irq) {
-        proto_emit_log("warn", "adc: no IRQ for ch%d on %s",
-                       cmd->channel, c->id);
+        proto_emit_log("warn", "adc: no IRQ for ch%d on %s", ch, c->id);
         return;
     }
     int v = cmd->val;
