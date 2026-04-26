@@ -7,7 +7,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-if [[ ! -f external/simavr/simavr/libsimavr.a ]]; then
+if ! compgen -G "external/simavr/simavr/obj-*/libsimavr.a" >/dev/null; then
     echo "ERROR: simavr is not built. Run scripts/bootstrap.sh first." >&2
     exit 1
 fi

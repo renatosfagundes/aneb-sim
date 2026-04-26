@@ -1,18 +1,23 @@
 set(SIMAVR_DIR ${CMAKE_SOURCE_DIR}/external/simavr)
-set(SIMAVR_LIB ${SIMAVR_DIR}/simavr/libsimavr.a)
 
-if(NOT EXISTS ${SIMAVR_LIB})
+# simavr's Makefile builds into obj-<host-triple>/, e.g. obj-x86_64-w64-mingw32/.
+# Glob and pick the first match — simavr's build only ever produces one such dir.
+file(GLOB _SIMAVR_LIB_CANDIDATES "${SIMAVR_DIR}/simavr/obj-*/libsimavr.a")
+list(LENGTH _SIMAVR_LIB_CANDIDATES _SIMAVR_LIB_COUNT)
+
+if(_SIMAVR_LIB_COUNT EQUAL 0)
     message(FATAL_ERROR
-        "simavr static library not found at ${SIMAVR_LIB}\n"
+        "simavr static library not found under ${SIMAVR_DIR}/simavr/obj-*/\n"
         "Run scripts/bootstrap.sh first to build simavr."
     )
 endif()
+
+list(GET _SIMAVR_LIB_CANDIDATES 0 SIMAVR_LIB)
 
 add_executable(aneb-sim src/main.c)
 
 target_include_directories(aneb-sim PRIVATE
     ${SIMAVR_DIR}/simavr/sim
-    ${SIMAVR_DIR}/include
 )
 
 target_link_libraries(aneb-sim PRIVATE
