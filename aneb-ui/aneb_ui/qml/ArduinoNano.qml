@@ -90,16 +90,19 @@ Item {
             { key: "pwr", brightness: root.power ? 1.0 : 0.0,             color: "#22cc44" }
         ]
         OnBoardLedOverlay {
-            xNorm: (root.coords.leds && root.coords.leds[modelData.key]) ? root.coords.leds[modelData.key].x : -1
-            yNorm: (root.coords.leds && root.coords.leds[modelData.key]) ? root.coords.leds[modelData.key].y : -1
+            property var entry: (root.coords.leds && root.coords.leds[modelData.key])
+                                ? root.coords.leds[modelData.key] : null
+            xNorm: entry ? entry.x   : -1
+            yNorm: entry ? entry.y   : -1
+            wNorm: entry ? (entry.w !== undefined ? entry.w : 0.014) : 0.014
+            hNorm: entry ? (entry.h !== undefined ? entry.h : 0.018) : 0.018
+            rotation: entry ? (entry.rot !== undefined ? entry.rot : 0) : 0
             brightness: modelData.brightness
             color: modelData.color
         }
     }
 
     // ---- Header pad overlays -------------------------------------
-    // One overlay per AVR-backed pin; power/GND/RST/AREF/etc. don't
-    // get a state dot since their levels aren't simulator-driven.
     Repeater {
         model: Object.keys(root.padPort)
         PadOverlay {
@@ -110,6 +113,7 @@ Item {
                                ? root.coords.pads[parts[0]][parts[1]] : null
             xNorm: entry ? entry.x : -1
             yNorm: entry ? entry.y : -1
+            rNorm: entry ? (entry.r !== undefined ? entry.r : 0.006) : 0.006
             pinPort: root.padPort[modelData]
         }
     }
@@ -119,21 +123,24 @@ Item {
         id: lo
         property real xNorm: -1
         property real yNorm: -1
+        // Body size in normalised image coords (separate from the
+        // outer Item's width/height so we can compute pixels here).
+        property real wNorm: 0.014
+        property real hNorm: 0.018
         property real brightness: 0
         property color color: "#ffaa22"
 
         visible: xNorm >= 0 && yNorm >= 0
 
-        // Real SMD LED bodies on a Nano are rectangular, ~2x as tall
-        // as they are wide (typical 0805/1206 package, vertical
-        // orientation in the LED strip next to the chip).
+        // Anchor at the rendered image rect, not the widget bounds.
+        // Width / height come from wNorm / hNorm × the rendered image.
         x: root._imgX + xNorm * root._imgW - width  / 2
         y: root._imgY + yNorm * root._imgH - height / 2
-        width:  8
-        height: 14
+        width:  Math.max(2, wNorm * root._imgW)
+        height: Math.max(2, hNorm * root._imgH)
+        transformOrigin: Item.Center
 
-        // Soft halo around the LED when bright. Slightly bigger
-        // than the body so the glow extends past the package edges.
+        // Halo around the LED.
         Rectangle {
             anchors.centerIn: parent
             width:  parent.width  * 2.4
@@ -143,7 +150,7 @@ Item {
             opacity: 0.5 * lo.brightness
             visible: lo.brightness > 0.05
         }
-        // SMD body — rounded-rectangle, NOT a circle.
+        // SMD body — rounded-rectangle.
         Rectangle {
             anchors.fill: parent
             radius: 1.5
@@ -151,7 +158,6 @@ Item {
             opacity: lo.brightness
             visible: lo.brightness > 0.05
             border.color: "#1a1a1a"; border.width: 1
-            // Specular highlight on the upper-left of the body.
             Rectangle {
                 anchors.top: parent.top; anchors.left: parent.left
                 anchors.topMargin:  parent.height * 0.10
@@ -170,6 +176,7 @@ Item {
         id: po
         property real xNorm: -1
         property real yNorm: -1
+        property real rNorm: 0.006
         property string pinPort: ""
 
         visible: xNorm >= 0 && yNorm >= 0
@@ -181,12 +188,15 @@ Item {
 
         x: root._imgX + xNorm * root._imgW - width  / 2
         y: root._imgY + yNorm * root._imgH - height / 2
-        width: 12; height: 12
+        width:  Math.max(3, rNorm * root._imgW * 2)
+        height: width
 
         // Halo.
         Rectangle {
             anchors.centerIn: parent
-            width: 22; height: 22; radius: 11
+            width:  parent.width  * 1.8
+            height: parent.height * 1.8
+            radius: width / 2
             color: "#ffd24a"
             opacity: po._level() * 0.5
             visible: po._level() > 0.05
