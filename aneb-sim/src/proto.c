@@ -18,6 +18,7 @@
 #include <string.h>
 
 #include "cJSON.h"
+#include "mcp2515.h"
 
 static pthread_mutex_t g_out_mutex = PTHREAD_MUTEX_INITIALIZER;
 
@@ -78,6 +79,30 @@ void proto_emit_uart(const char *chip, const uint8_t *data, size_t len, uint64_t
     pthread_mutex_unlock(&g_out_mutex);
 }
 
+void proto_emit_can_tx(const char *src_chip, const char *bus,
+                       const struct mcp2515_frame *f, uint64_t ts)
+{
+    if (!f) return;
+    pthread_mutex_lock(&g_out_mutex);
+    fprintf(stdout,
+            "{\"v\":%d,\"t\":\"can_tx\",\"bus\":\"%s\",\"src\":\"%s\","
+            "\"id\":\"0x%X\",\"ext\":%s,\"rtr\":%s,\"dlc\":%u,\"data\":\"",
+            ANEB_PROTO_VERSION, bus, src_chip,
+            (unsigned)f->id,
+            f->ext ? "true" : "false",
+            f->rtr ? "true" : "false",
+            (unsigned)f->dlc);
+    /* Hex-encode the data bytes (DLC is bounded to 8). */
+    int n = f->dlc;
+    if (n > 8) n = 8;
+    for (int i = 0; i < n; i++) {
+        fprintf(stdout, "%02X", f->data[i]);
+    }
+    fprintf(stdout, "\",\"ts\":%llu}\n", (unsigned long long)ts);
+    fflush(stdout);
+    pthread_mutex_unlock(&g_out_mutex);
+}
+
 void proto_emit_log(const char *level, const char *fmt, ...)
 {
     char buf[1024];
@@ -108,7 +133,8 @@ static cmd_type_t parse_cmd_type(const char *s)
     if (!strcmp(s, "speed"))  return CMD_SPEED;
     if (!strcmp(s, "pause"))  return CMD_PAUSE;
     if (!strcmp(s, "resume")) return CMD_RESUME;
-    if (!strcmp(s, "step"))   return CMD_STEP;
+    if (!strcmp(s, "step"))       return CMD_STEP;
+    if (!strcmp(s, "can_inject")) return CMD_CAN_INJECT;
     return CMD_UNKNOWN;
 }
 
@@ -151,6 +177,7 @@ int proto_parse_command(const char *line, cmd_t *out)
     copy_str_field(root, "chip", out->chip, sizeof(out->chip));
     copy_str_field(root, "pin",  out->pin,  sizeof(out->pin));
     copy_str_field(root, "path", out->path, sizeof(out->path));
+    copy_str_field(root, "bus",  out->bus,  sizeof(out->bus));
 
     const cJSON *val = cJSON_GetObjectItemCaseSensitive(root, "val");
     if (cJSON_IsNumber(val)) out->val = val->valueint;
@@ -163,6 +190,21 @@ int proto_parse_command(const char *line, cmd_t *out)
 
     const cJSON *cycles = cJSON_GetObjectItemCaseSensitive(root, "cycles");
     if (cJSON_IsNumber(cycles)) out->cycles = (uint64_t)cycles->valuedouble;
+
+    /* CAN-frame fields (CMD_CAN_INJECT). `id` may be either a number or a
+     * "0x..." string for human-friendly hex. */
+    const cJSON *can_id = cJSON_GetObjectItemCaseSensitive(root, "id");
+    if (cJSON_IsNumber(can_id)) {
+        out->can_id = (uint32_t)can_id->valuedouble;
+    } else if (cJSON_IsString(can_id) && can_id->valuestring) {
+        out->can_id = (uint32_t)strtoul(can_id->valuestring, NULL, 0);
+    }
+    const cJSON *can_ext = cJSON_GetObjectItemCaseSensitive(root, "ext");
+    if (cJSON_IsBool(can_ext))   out->can_ext = cJSON_IsTrue(can_ext);
+    const cJSON *can_rtr = cJSON_GetObjectItemCaseSensitive(root, "rtr");
+    if (cJSON_IsBool(can_rtr))   out->can_rtr = cJSON_IsTrue(can_rtr);
+    const cJSON *can_dlc = cJSON_GetObjectItemCaseSensitive(root, "dlc");
+    if (cJSON_IsNumber(can_dlc)) out->can_dlc = (uint8_t)can_dlc->valueint;
 
     const cJSON *data = cJSON_GetObjectItemCaseSensitive(root, "data");
     if (cJSON_IsString(data) && data->valuestring) {

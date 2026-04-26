@@ -52,6 +52,27 @@ All events carry `"t":"<type>"`. Common fields:
 `data` is a JSON-escaped string. Bytes ≥ 0x80 are passed through verbatim
 (invalid UTF-8 may appear if firmware emits raw binary).
 
+### `can_tx` — CAN frame transmitted onto the bus
+
+```json
+{"v":1,"t":"can_tx","bus":"can1","src":"ecu1","id":"0x123","ext":false,"rtr":false,"dlc":2,"data":"CAFE","ts":12345}
+```
+
+| Field | Type | Notes |
+|---|---|---|
+| `bus`  | string | Bus name; currently always `"can1"`. |
+| `src`  | string | Source chip id (`"ecu1"`–`"ecu4"`). |
+| `id`   | string | Hex-formatted identifier (11- or 29-bit, LSB-aligned). |
+| `ext`  | bool   | Extended (29-bit) frame. |
+| `rtr`  | bool   | Remote-transmission-request. |
+| `dlc`  | int    | Data length 0–8. |
+| `data` | string | Hex-encoded payload, exactly `dlc * 2` chars. |
+
+The event fires at the moment a controller's TXREQ is acknowledged
+("transmission complete" in our model). Self-deliveries from a peer's
+filtered RX are visible only as `pin` events on its INT line — not as
+new `can_tx` events.
+
 ### `log` — engine log message
 
 ```json
@@ -140,6 +161,25 @@ Affects all chips simultaneously.
 
 M1 implements this as a coarse resume-tick-pause loop (granularity
 = `SIM_CYCLES_PER_TICK`). Single-cycle stepping arrives in M5.
+
+### `can_inject` — inject a CAN frame onto the bus
+
+```json
+{"v":1,"c":"can_inject","bus":"can1","id":"0x123","ext":false,"rtr":false,"dlc":2,"data":"CAFE"}
+```
+
+| Field | Type | Notes |
+|---|---|---|
+| `bus`  | string | Bus name, optional. Defaults to the only bus (`"can1"`). |
+| `id`   | int or string | Identifier. Numbers and `"0x..."` strings both accepted. |
+| `ext`  | bool   | Extended (29-bit). Default `false`. |
+| `rtr`  | bool   | Remote-transmission-request. Default `false`. |
+| `dlc`  | int    | Optional. If omitted, inferred from the length of `data`. |
+| `data` | string | Hex-encoded payload. Optional for RTR frames. |
+
+The frame is delivered to every attached controller (subject to that
+controller's filters and mode). Used by the UI ("send a frame from
+outside the sim") and the scenario player.
 
 ---
 

@@ -9,7 +9,9 @@
 #include "avr_uart.h"
 #include "avr_adc.h"
 
+#include "can_bus.h"
 #include "chip.h"
+#include "mcp2515.h"
 #include "pin_names.h"
 #include "proto.h"
 #include "sim_loop.h"
@@ -140,6 +142,60 @@ static void apply_reset(cmd_t *cmd)
     chip_reset(c);
 }
 
+/* Decode an ASCII hex string into raw bytes. Returns count written, or
+ * -1 on a malformed input (odd length, non-hex digit). Caller-supplied
+ * `dst` must hold at least cap bytes; excess input is truncated. */
+static int hex_decode(const char *src, size_t src_len, uint8_t *dst, size_t cap)
+{
+    if (src_len % 2 != 0) return -1;
+    size_t out = 0;
+    for (size_t i = 0; i < src_len && out < cap; i += 2) {
+        unsigned hi, lo;
+        char c1 = src[i], c2 = src[i + 1];
+        if      (c1 >= '0' && c1 <= '9') hi = c1 - '0';
+        else if (c1 >= 'a' && c1 <= 'f') hi = c1 - 'a' + 10;
+        else if (c1 >= 'A' && c1 <= 'F') hi = c1 - 'A' + 10;
+        else return -1;
+        if      (c2 >= '0' && c2 <= '9') lo = c2 - '0';
+        else if (c2 >= 'a' && c2 <= 'f') lo = c2 - 'a' + 10;
+        else if (c2 >= 'A' && c2 <= 'F') lo = c2 - 'A' + 10;
+        else return -1;
+        dst[out++] = (uint8_t)((hi << 4) | lo);
+    }
+    return (int)out;
+}
+
+static void apply_can_inject(cmd_t *cmd)
+{
+    can_bus_t *bus = sim_loop_bus();
+    if (!bus) {
+        proto_emit_log("warn", "can_inject: bus not initialized");
+        return;
+    }
+    /* The bus name is optional but if present must match. */
+    if (cmd->bus[0] && strcmp(cmd->bus, bus->name) != 0) {
+        proto_emit_log("warn", "can_inject: unknown bus '%s'", cmd->bus);
+        return;
+    }
+
+    mcp2515_frame_t f = {0};
+    f.id  = cmd->can_id & (cmd->can_ext ? 0x1FFFFFFFu : 0x7FFu);
+    f.ext = cmd->can_ext;
+    f.rtr = cmd->can_rtr;
+    f.dlc = (cmd->can_dlc > 8) ? 8 : cmd->can_dlc;
+    if (cmd->data && cmd->data_len > 0) {
+        int n = hex_decode(cmd->data, cmd->data_len, f.data, 8);
+        if (n < 0) {
+            proto_emit_log("warn", "can_inject: malformed hex data");
+            return;
+        }
+        /* If DLC wasn't explicit, infer from decoded length. */
+        if (cmd->can_dlc == 0) f.dlc = (uint8_t)n;
+    }
+
+    can_bus_inject(bus, &f);
+}
+
 void cmd_apply(cmd_t *cmd)
 {
     switch (cmd->type) {
@@ -147,10 +203,11 @@ void cmd_apply(cmd_t *cmd)
     case CMD_ADC:    apply_adc(cmd);    break;
     case CMD_UART:   apply_uart(cmd);   break;
     case CMD_LOAD:   apply_load(cmd);   break;
-    case CMD_RESET:  apply_reset(cmd);  break;
-    case CMD_SPEED:  sim_loop_set_speed(cmd->speed); break;
-    case CMD_PAUSE:  sim_loop_pause_all();  break;
-    case CMD_RESUME: sim_loop_resume_all(); break;
+    case CMD_RESET:      apply_reset(cmd);      break;
+    case CMD_CAN_INJECT: apply_can_inject(cmd); break;
+    case CMD_SPEED:      sim_loop_set_speed(cmd->speed); break;
+    case CMD_PAUSE:      sim_loop_pause_all();  break;
+    case CMD_RESUME:     sim_loop_resume_all(); break;
     case CMD_STEP:
         /* M1: step is a stub — does a resume-pause sandwich for now.
          * Full single-stepping by cycles lands when wallclock pacing

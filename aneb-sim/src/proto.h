@@ -12,31 +12,39 @@
 #ifndef ANEB_PROTO_H
 #define ANEB_PROTO_H
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
 #define ANEB_PROTO_VERSION 1
 
+/* Forward declarations from mcp2515.h to avoid pulling that whole header
+ * in here (proto.h is included widely; mcp2515.h is module-local). */
+struct mcp2515_frame;
+
 /* ----- Event emission (engine -> UI) ------------------------------------ */
 
-void proto_emit_pin (const char *chip, const char *pin_name, int val, uint64_t ts);
-void proto_emit_pwm (const char *chip, const char *pin_name, double duty, uint64_t ts);
-void proto_emit_uart(const char *chip, const uint8_t *data, size_t len, uint64_t ts);
-void proto_emit_log (const char *level, const char *fmt, ...);
+void proto_emit_pin   (const char *chip, const char *pin_name, int val, uint64_t ts);
+void proto_emit_pwm   (const char *chip, const char *pin_name, double duty, uint64_t ts);
+void proto_emit_uart  (const char *chip, const uint8_t *data, size_t len, uint64_t ts);
+void proto_emit_can_tx(const char *src_chip, const char *bus,
+                       const struct mcp2515_frame *f, uint64_t ts);
+void proto_emit_log   (const char *level, const char *fmt, ...);
 
 /* ----- Command parsing (UI -> engine) ----------------------------------- */
 
 typedef enum {
     CMD_UNKNOWN = 0,
-    CMD_DIN,        /* set digital-input pin level */
-    CMD_ADC,        /* set ADC channel value (0..1023) */
-    CMD_UART,       /* push bytes into a chip's UART RX */
-    CMD_LOAD,       /* load a hex file into a chip */
-    CMD_RESET,      /* hard-reset a chip */
-    CMD_SPEED,      /* wallclock multiplier (>0) */
+    CMD_DIN,         /* set digital-input pin level */
+    CMD_ADC,         /* set ADC channel value (0..1023) */
+    CMD_UART,        /* push bytes into a chip's UART RX */
+    CMD_LOAD,        /* load a hex file into a chip */
+    CMD_RESET,       /* hard-reset a chip */
+    CMD_SPEED,       /* wallclock multiplier (>0) */
     CMD_PAUSE,
     CMD_RESUME,
-    CMD_STEP,       /* run N cycles, then auto-pause */
+    CMD_STEP,        /* run N cycles, then auto-pause */
+    CMD_CAN_INJECT,  /* inject a CAN frame onto the bus */
 } cmd_type_t;
 
 typedef struct {
@@ -46,10 +54,17 @@ typedef struct {
     int         channel;    /* ADC channel index 0..7 (CMD_ADC) */
     int         val;        /* digital level (CMD_DIN), ADC value (CMD_ADC) */
     char        path[256];  /* firmware path (CMD_LOAD) */
-    char       *data;       /* malloc'd UART payload (CMD_UART) — caller frees */
+    char       *data;       /* malloc'd UART/CAN payload — caller frees */
     size_t      data_len;
     double      speed;      /* CMD_SPEED multiplier */
     uint64_t    cycles;     /* CMD_STEP cycle count */
+
+    /* CAN-frame fields (CMD_CAN_INJECT). */
+    char        bus[16];    /* "can1" */
+    uint32_t    can_id;
+    bool        can_ext;
+    bool        can_rtr;
+    uint8_t     can_dlc;
 } cmd_t;
 
 /*
