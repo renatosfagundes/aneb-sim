@@ -23,6 +23,7 @@
 /* ----- forward decls -------------------------------------------------- */
 
 static void deliver_loopback(mcp2515_t *m, int txbuf);
+static void deliver_normal  (mcp2515_t *m, int txbuf);
 static bool route_inbound   (mcp2515_t *m, const mcp2515_frame_t *f);
 static void update_int_pin  (mcp2515_t *m);
 
