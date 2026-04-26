@@ -271,3 +271,38 @@ Added in their respective milestones, all under `v:1`:
 - `can_inject`, `can_corrupt`, `force_busoff` (M3 / M4)
 - ADC events (currently UI-driven only)        (M5)
 - `pwm` widening to include all PWM-capable pins (M5)
+
+---
+
+## UI-side conventions (not engine wire format)
+
+These are parsed by the UI bridge from a chip's UART stream; the
+engine itself does not interpret them. They piggy-back on the
+existing `uart` event so no new event type is needed.
+
+### `__LCD__` — drive the per-ECU 16x2 character LCD
+
+Lines of the form
+
+    __LCD__<row>:<col>:<text>\n
+
+emitted on a chip's UART are parsed by the UI and routed to that
+chip's virtual 16x2 LCD widget instead of (or in addition to) the
+serial console.
+
+| Field  | Type | Notes |
+|---|---|---|
+| `row`  | int  | `0` (top) or `1` (bottom). |
+| `col`  | int  | Cursor start column, `0..15`. |
+| `text` | str  | Up to `16 - col` characters; longer text is truncated. |
+
+Example firmware (Arduino):
+
+```cpp
+Serial.println("__LCD__0:0:Hello, World!");
+Serial.println("__LCD__1:0:T = 23.4 C");
+```
+
+The engine still emits a normal `uart` event with the raw line, so
+the serial console shows it too — useful for debugging. Other UART
+output (anything not matching the prefix) flows through unchanged.

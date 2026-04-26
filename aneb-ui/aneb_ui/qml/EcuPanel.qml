@@ -40,7 +40,8 @@ Item {
                 font.bold: true
                 Layout.preferredWidth: 60
             }
-            // LEDs
+            // Breakout LEDs — DOUT0 / DOUT1 / built-in L. The buzzer
+            // moved out into its own widget below the Nano.
             RowLayout {
                 spacing: 4
                 Layout.fillWidth: false
@@ -59,10 +60,6 @@ Item {
                     onColor: "#ffaa22"
                     brightness: nano.level("PB5")
                                 + (nano.duty("PD6") * (1 - nano.level("PB5")))
-                }
-                Led {
-                    Layout.preferredWidth: 14; Layout.preferredHeight: 14
-                    onColor: "#ff4444"; brightness: nano.level("PD7")
                 }
             }
 
@@ -95,6 +92,26 @@ Item {
             function onUartSent(chip) {
                 if (chip === root.chip) nano.pulseRx()
             }
+        }
+
+        // ---- Hardware row: LCD + Buzzer ----------------------------
+        RowLayout {
+            Layout.fillWidth: true
+            Layout.preferredHeight: 50
+            spacing: 12
+
+            LcdWidget {
+                chip: root.chip
+                Layout.preferredWidth:  208
+                Layout.preferredHeight: 44
+            }
+            Item { Layout.fillWidth: true }    // spacer
+            BuzzerWidget {
+                chip: root.chip
+                Layout.preferredWidth:  46
+                Layout.preferredHeight: 46
+            }
+            Item { Layout.preferredWidth: 8 }
         }
 
         // ---- Pots row ----------------------------------------------
