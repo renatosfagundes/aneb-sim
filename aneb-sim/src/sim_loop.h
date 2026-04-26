@@ -42,6 +42,13 @@ chip_t *sim_loop_chip(int index);
 int     sim_loop_count(void);
 
 /*
+ * Access the shared CAN bus (CAN1). Used by command dispatch to inject
+ * frames from the UI / scenario player. Returns NULL before init.
+ */
+struct can_bus;
+struct can_bus *sim_loop_bus(void);
+
+/*
  * Advance the simulation by one tick (SIM_CYCLES_PER_TICK cycles per chip).
  * Returns false if all chips have stopped (cpu_Done / cpu_Crashed) and there
  * is no further work — main loop should exit.

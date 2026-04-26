@@ -9,6 +9,7 @@
 #include "avr_uart.h"
 #include "avr_spi.h"
 
+#include "can_bus.h"
 #include "chip.h"
 #include "mcp2515.h"
 #include "pin_names.h"
@@ -31,6 +32,9 @@ static double            g_speed      = 1.0;
 
 /* One MCP2515 per ECU (4); MCU has none. Indexed by chip index 0..3. */
 static mcp2515_t         g_can[4];
+
+/* Single shared CAN bus (CAN1). All four ECUs are attached. */
+static can_bus_t         g_can1;
 
 /* ----- IRQ callbacks --------------------------------------------------- */
 
@@ -112,6 +116,19 @@ static void on_mcp_int(void *ctx, int asserted)
     if (int_pin) avr_raise_irq(int_pin, asserted ? 0 : 1);
 }
 
+static void on_mcp_tx(void *ctx, const mcp2515_frame_t *frame)
+{
+    int idx = (int)(intptr_t)ctx;
+    if (idx < 0 || idx >= 4) return;
+    chip_t *c = &g_chips[idx];
+
+    /* Emit the wire-level can_tx event for the UI / scenario log. */
+    proto_emit_can_tx(c->id, g_can1.name, frame, c->cycles);
+
+    /* Fan out to peer controllers on the same bus. */
+    can_bus_broadcast(&g_can1, frame, &g_can[idx]);
+}
+
 static void wire_mcp2515(int idx)
 {
     chip_t    *c = &g_chips[idx];
@@ -125,8 +142,9 @@ static void wire_mcp2515(int idx)
     snprintf(id, sizeof(id), "%.*s.can1", (int)(CHIP_ID_MAX - 1), c->id);
     mcp2515_init(m, id);
     m->on_int = on_mcp_int;
-    m->on_tx  = NULL;                      /* set by M3 bus glue */
+    m->on_tx  = on_mcp_tx;
     m->ctx    = (void *)(intptr_t)idx;
+    can_bus_attach(&g_can1, m);
 
     /* SPI: each AVR-master TX byte triggers our model. */
     avr_irq_t *spi_in = avr_io_getirq(c->avr,
@@ -208,12 +226,18 @@ int sim_loop_init(void)
         wire_chip_irqs(&g_chips[i]);
         g_nchips++;
     }
+    /* Single shared CAN bus, attach all four ECUs. Must come before
+     * wire_mcp2515 so that on_tx -> can_bus_broadcast has a target. */
+    can_bus_init(&g_can1, "can1");
+
     /* Attach an MCP2515 to each ECU (indices 0..3). The MCU at index 4
      * has no CAN controller. */
     for (int i = 0; i < 4; i++) {
         wire_mcp2515(i);
     }
-    proto_emit_log("info", "sim_loop: initialized %d chips, 4 mcp2515", g_nchips);
+    proto_emit_log("info",
+                   "sim_loop: initialized %d chips, 4 mcp2515, bus '%s'",
+                   g_nchips, g_can1.name);
     return 0;
 }
 
@@ -235,6 +259,11 @@ chip_t *sim_loop_chip(int index)
 int sim_loop_count(void)
 {
     return g_nchips;
+}
+
+struct can_bus *sim_loop_bus(void)
+{
+    return &g_can1;
 }
 
 bool sim_loop_tick(void)
