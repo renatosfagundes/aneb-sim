@@ -31,6 +31,9 @@ class QmlMainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("aneb-sim — ANEB v1.1 simulator")
         self.resize(1700, 1000)
+        # Below this size the layout can't fit four ECU panels + the
+        # MCU column without overlap; clamp instead of letting Qt clip.
+        self.setMinimumSize(1280, 760)
 
         # Engine + state pipeline (identical to app.py).
         self._state = SimState(self)

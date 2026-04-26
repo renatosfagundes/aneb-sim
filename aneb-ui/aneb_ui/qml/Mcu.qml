@@ -1,14 +1,12 @@
-// Mcu.qml — small daughterboard panel for the ATmega328PB controller.
-//
-// Visually a smaller Nano (uses the same render asset for now) plus the
-// two latching mode-selector buttons that appear at the top of the real
-// board, plus a serial console.
+// Mcu.qml — daughterboard panel for the ATmega328PB controller.
+// Uses QtQuick.Layouts to flex on resize.
 import QtQuick 2.15
+import QtQuick.Layouts 1.15
 
 Item {
     id: root
-    implicitWidth:  500
-    implicitHeight: 380
+    implicitWidth:  460
+    implicitHeight: 360
 
     Rectangle {
         anchors.fill: parent
@@ -18,10 +16,10 @@ Item {
         radius: 6
     }
 
-    Column {
+    ColumnLayout {
         anchors.fill: parent
-        anchors.margins: 12
-        spacing: 8
+        anchors.margins: 10
+        spacing: 6
 
         Text {
             text: "MCU  ATmega328PB"
@@ -29,25 +27,39 @@ Item {
             font.family: "Consolas"
             font.pixelSize: 14
             font.bold: true
+            Layout.preferredHeight: 22
         }
 
-        Row {
-            spacing: 12
-            anchors.horizontalCenter: parent.horizontalCenter
-            PushButton { chip: "mcu"; pin: "D8"; label: "Mode 1\nD8"; latching: true }
-            PushButton { chip: "mcu"; pin: "D9"; label: "Mode 2\nD9"; latching: true }
+        // Mode-selector buttons.
+        RowLayout {
+            Layout.fillWidth: true
+            Layout.preferredHeight: 66
+            Layout.alignment: Qt.AlignHCenter
+            spacing: 14
+            Item { Layout.fillWidth: true }
+            PushButton {
+                chip: "mcu"; pin: "D8"; label: "Mode 1\nD8"; latching: true
+                Layout.preferredWidth: 60; Layout.preferredHeight: 66
+            }
+            PushButton {
+                chip: "mcu"; pin: "D9"; label: "Mode 2\nD9"; latching: true
+                Layout.preferredWidth: 60; Layout.preferredHeight: 66
+            }
+            Item { Layout.fillWidth: true }
         }
 
         ArduinoNano {
             chip: "mcu"
-            width: parent.width
-            height: width * (160.0 / 420.0)
+            Layout.fillWidth: true
+            Layout.preferredHeight: Math.min(width * (160.0 / 420.0), 180)
+            Layout.minimumHeight: 80
         }
 
         SerialConsole {
             chip: "mcu"
-            width: parent.width
-            height: parent.height - y - 8
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            Layout.minimumHeight: 60
         }
     }
 }
