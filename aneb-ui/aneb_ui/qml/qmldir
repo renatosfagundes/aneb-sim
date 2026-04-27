@@ -12,6 +12,8 @@ SerialConsole       1.0 SerialConsole.qml
 SerialConsoleWindow 1.0 SerialConsoleWindow.qml
 Plotter             1.0 Plotter.qml
 PlotterWindow       1.0 PlotterWindow.qml
+Dashboard           1.0 Dashboard.qml
+DashboardWindow     1.0 DashboardWindow.qml
 EcuPanel      1.0 EcuPanel.qml
 LcdWidget     1.0 LcdWidget.qml
 BuzzerWidget  1.0 BuzzerWidget.qml

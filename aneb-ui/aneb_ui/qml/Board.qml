@@ -10,6 +10,9 @@ Item {
     // SizeRootObjectToView so the QML respects the host window.
 
     Rectangle { anchors.fill: parent; color: "#9fbfd0" }
+
+    // Top-level dashboard window — hidden until the toolbar toggles it.
+    DashboardWindow { id: dashboardWindow }
     Image {
         anchors.fill: parent
         source: "../qml_assets/background.png"
@@ -54,6 +57,10 @@ Item {
                 }
                 Button { text: "Pause";  onClicked: { if (bridge) bridge.pauseEngine() } }
                 Button { text: "Resume"; onClicked: { if (bridge) bridge.resumeEngine() } }
+                Button {
+                    text: dashboardWindow.visible ? "Dashboard ▾" : "Dashboard ▸"
+                    onClicked: dashboardWindow.visible = !dashboardWindow.visible
+                }
                 Item { Layout.fillWidth: true }
                 Text {
                     text: "Engine: " + (bridge && bridge.engineRunning ? "running" : "stopped")

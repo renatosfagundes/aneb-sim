@@ -39,13 +39,13 @@ is not modeled in v1.
 
 Filled in per milestone:
 
-- **M0** — bootstrap, simavr build, GPIO trace smoke test *(current)*
-- **M1** — JSON proto, multi-chip lockstep scheduler, UART, GPIO commands
-- **M2** — MCP2515 model + register-level tests (loopback only)
-- **M3** — CAN bus model + multi-ECU traffic
-- **M4** — bus-off and error-frame fidelity
-- **M5** — GPIO/ADC/analog routing + LDR loop + buzzer + LOOP feedback
-- **M6** — PyQt6 UI core
-- **M7** — dashboard + plotter widgets
+- **M0** — bootstrap, simavr build, GPIO trace smoke test *(done)*
+- **M1** — JSON proto, multi-chip lockstep scheduler, UART, GPIO commands *(done)*
+- **M2** — MCP2515 model + register-level tests (loopback only) *(done)*
+- **M3** — CAN bus model + multi-ECU traffic *(done)*
+- **M4** — bus-off and error-frame fidelity *(done)*
+- **M5** — GPIO/ADC/analog routing + LDR loop + buzzer + LOOP feedback *(done)*
+- **M6** — PyQt6 UI core *(done — QML-based per-chip panels with Nano illustration, I2C-driven LCD, domed 5mm LEDs, angular-drag trimpots, 2x2 colored buttons, togglable serial console window per chip)*
+- **M7** — dashboard + plotter widgets *(done — per-chip rolling-window plotter window with QtCharts, sampled at 20 Hz from `plot_buffers.py`; global compact dashboard window toggled from the toolbar)*
 - **M8** — teaching aids (error injection, scenario player)
 - **M9** — packaging & polish

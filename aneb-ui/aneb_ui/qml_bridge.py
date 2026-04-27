@@ -97,6 +97,7 @@ class QmlBridge(QObject):
     # or as binding dependencies on the corresponding properties.
     pinSeqChanged       = pyqtSignal()
     pwmSeqChanged       = pyqtSignal()
+    adcSeqChanged       = pyqtSignal()
     canFramesSeqChanged = pyqtSignal()
     canStateSeqChanged  = pyqtSignal()
     engineRunningChanged = pyqtSignal()
@@ -138,6 +139,7 @@ class QmlBridge(QObject):
         # Wire SimState's signals to our notifiers.
         state.pin_changed.connect      (self._on_pin_changed)
         state.pwm_changed.connect      (self._on_pwm_changed)
+        state.adc_changed.connect      (self._on_adc_changed)
         state.uart_appended.connect    (self._on_uart_appended)
         state.can_tx_appended.connect  (self._on_can_tx_appended)
         state.can_state_changed.connect(self._on_can_state_changed)
@@ -154,6 +156,9 @@ class QmlBridge(QObject):
 
     def _on_pwm_changed(self, _chip, _pin, _duty):
         self.pwmSeqChanged.emit()
+
+    def _on_adc_changed(self, _chip, _ch, _val):
+        self.adcSeqChanged.emit()
 
     def _on_uart_appended(self, chip: str, data: str):
         self.uartAppended.emit(chip, data)
@@ -213,6 +218,15 @@ class QmlBridge(QObject):
     @pyqtProperty("QVariantMap", notify=pwmSeqChanged)
     def pwmDuties(self) -> dict:
         return {chip: dict(pwm) for chip, pwm in self._state._pwm.items()}
+
+    @pyqtProperty("QVariantMap", notify=adcSeqChanged)
+    def adcValues(self) -> dict:
+        # Channel keys come back as JS strings since QML's QVariantMap
+        # is more comfortable with string keys than ints.
+        return {
+            chip: {str(ch): v for ch, v in chans.items()}
+            for chip, chans in self._state._adc.items()
+        }
 
     @pyqtProperty("QVariantList", notify=canFramesSeqChanged)
     def canFrames(self) -> list:
