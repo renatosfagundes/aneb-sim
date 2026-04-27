@@ -132,11 +132,17 @@ Item {
             Item { Layout.fillWidth: true }
         }
 
-        // ---- I/O row: LEDs (left) + Pots (center) + Buttons (right) -
+        // ---- I/O row: LEDs + Pots + Buttons (clustered, centered) --
+        // Two outer fillWidth spacers center the whole I/O cluster.
+        // Inner spacing is small (12*_s) so the LEDs and buttons sit
+        // close to the pots instead of being pinned to the panel
+        // borders.
         RowLayout {
             Layout.fillWidth: true
             Layout.preferredHeight: 116 * root._s
-            spacing: 8 * root._s
+            spacing: 12 * root._s
+
+            Item { Layout.fillWidth: true }   // outer left spacer
 
             // 2x2 LED grid: DOUT0 amber, DOUT1 green, L red, LDR blue.
             GridLayout {
@@ -212,27 +218,24 @@ Item {
                 }
             }
 
-            Item { Layout.fillWidth: true }
-
-            // Pots row floats in the middle of the I/O row.
+            // Pots row, scaled 40% larger than the original 40x60 so
+            // the brass-cap arrow is clearly readable.
             RowLayout {
                 spacing: 6 * root._s
                 Layout.alignment: Qt.AlignVCenter
                 TrimPot { chip: root.chip; channel: 0; label: "AIN0  A0"
-                          Layout.preferredWidth:  40 * root._s
-                          Layout.preferredHeight: 60 * root._s }
+                          Layout.preferredWidth:  56 * root._s
+                          Layout.preferredHeight: 84 * root._s }
                 TrimPot { chip: root.chip; channel: 1; label: "AIN1  A1"
-                          Layout.preferredWidth:  40 * root._s
-                          Layout.preferredHeight: 60 * root._s }
+                          Layout.preferredWidth:  56 * root._s
+                          Layout.preferredHeight: 84 * root._s }
                 TrimPot { chip: root.chip; channel: 2; label: "AIN2  A2"
-                          Layout.preferredWidth:  40 * root._s
-                          Layout.preferredHeight: 60 * root._s }
+                          Layout.preferredWidth:  56 * root._s
+                          Layout.preferredHeight: 84 * root._s }
                 TrimPot { chip: root.chip; channel: 3; label: "AIN3  A3"
-                          Layout.preferredWidth:  40 * root._s
-                          Layout.preferredHeight: 60 * root._s }
+                          Layout.preferredWidth:  56 * root._s
+                          Layout.preferredHeight: 84 * root._s }
             }
-
-            Item { Layout.fillWidth: true }
 
             // 2x2 button grid.
             GridLayout {
@@ -266,6 +269,8 @@ Item {
                     Layout.preferredHeight: 56 * root._s
                 }
             }
+
+            Item { Layout.fillWidth: true }   // outer right spacer
         }
     }
 }
