@@ -133,14 +133,13 @@ Item {
         }
 
         // ---- I/O row: LEDs + Pots + Buttons (clustered, centered) --
-        // Two outer fillWidth spacers center the whole I/O cluster.
-        // Inner spacing is small (12*_s) so the LEDs and buttons sit
-        // close to the pots instead of being pinned to the panel
-        // borders.
+        // Two outer fillWidth spacers center the whole I/O cluster
+        // and the inner row spacing (28*_s) gives the LEDs and
+        // buttons some visible breathing room from the trimpots.
         RowLayout {
             Layout.fillWidth: true
             Layout.preferredHeight: 116 * root._s
-            spacing: 12 * root._s
+            spacing: 28 * root._s
 
             Item { Layout.fillWidth: true }   // outer left spacer
 
@@ -224,17 +223,17 @@ Item {
                 spacing: 6 * root._s
                 Layout.alignment: Qt.AlignVCenter
                 TrimPot { chip: root.chip; channel: 0; label: "AIN0  A0"
-                          Layout.preferredWidth:  56 * root._s
-                          Layout.preferredHeight: 84 * root._s }
+                          Layout.preferredWidth:  48 * root._s
+                          Layout.preferredHeight: 72 * root._s }
                 TrimPot { chip: root.chip; channel: 1; label: "AIN1  A1"
-                          Layout.preferredWidth:  56 * root._s
-                          Layout.preferredHeight: 84 * root._s }
+                          Layout.preferredWidth:  48 * root._s
+                          Layout.preferredHeight: 72 * root._s }
                 TrimPot { chip: root.chip; channel: 2; label: "AIN2  A2"
-                          Layout.preferredWidth:  56 * root._s
-                          Layout.preferredHeight: 84 * root._s }
+                          Layout.preferredWidth:  48 * root._s
+                          Layout.preferredHeight: 72 * root._s }
                 TrimPot { chip: root.chip; channel: 3; label: "AIN3  A3"
-                          Layout.preferredWidth:  56 * root._s
-                          Layout.preferredHeight: 84 * root._s }
+                          Layout.preferredWidth:  48 * root._s
+                          Layout.preferredHeight: 72 * root._s }
             }
 
             // 2x2 button grid.
