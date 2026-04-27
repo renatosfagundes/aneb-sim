@@ -74,20 +74,19 @@ Item {
         }
 
         // ---- Nano illustration -------------------------------------
-        // Layout.fillHeight makes the Nano absorb whatever vertical
-        // space the title / hardware / I/O rows leave behind, so the
-        // illustration scales up on tall panels and shrinks down when
-        // the window gets squeezed. The Image element inside uses
-        // PreserveAspectFit, so the painted board stays in proportion
-        // at every size.
+        // Height is driven by width via the image's 1500x571 aspect
+        // ratio, so the Nano fills the panel horizontally without
+        // letterboxing. Capped at 200 px so a very tall window doesn't
+        // turn it into a billboard. Min 60 px keeps it usable on
+        // squeezed layouts.
         ArduinoNano {
             id: nano
             chip: root.chip
             power: bridge && bridge.engineRunning
-            Layout.fillWidth:  true
-            Layout.fillHeight: true
-            Layout.minimumHeight: 50
-            Layout.maximumHeight: 220
+            Layout.fillWidth: true
+            Layout.preferredHeight: width / (1500.0 / 571.0)
+            Layout.minimumHeight: 60
+            Layout.maximumHeight: 200
         }
 
         Connections {
@@ -114,7 +113,7 @@ Item {
             Item { Layout.fillWidth: true }     // expanding left margin
             LcdWidget {
                 chip: root.chip
-                Layout.preferredWidth:  Math.max(200, Math.min(root.width * 0.55, 340))
+                Layout.preferredWidth:  Math.max(180, Math.min(root.width * 0.62, 360))
                 Layout.preferredHeight: 44
                 Layout.maximumHeight:   44
             }

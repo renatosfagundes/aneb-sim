@@ -70,11 +70,12 @@ Item {
             id: mcuNano
             chip: "mcu"
             power: bridge && bridge.engineRunning
-            Layout.fillWidth:  true
-            Layout.fillHeight: true
+            Layout.fillWidth: true
+            Layout.preferredHeight: width / (1500.0 / 571.0)
             Layout.minimumHeight: 60
             Layout.maximumHeight: 200
         }
+        Item { Layout.fillHeight: true }   // soaks up any remaining height
         Connections {
             target: bridge
             function onUartAppended(chip, data) {
