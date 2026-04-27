@@ -70,9 +70,10 @@ Item {
             id: mcuNano
             chip: "mcu"
             power: bridge && bridge.engineRunning
-            Layout.fillWidth: true
-            Layout.preferredHeight: Math.min(width / (1500.0 / 571.0), 128)
+            Layout.fillWidth:  true
+            Layout.fillHeight: true
             Layout.minimumHeight: 60
+            Layout.maximumHeight: 200
         }
         Connections {
             target: bridge
@@ -84,6 +85,5 @@ Item {
             }
         }
 
-        Item { Layout.fillHeight: true }   // bottom filler
     }
 }

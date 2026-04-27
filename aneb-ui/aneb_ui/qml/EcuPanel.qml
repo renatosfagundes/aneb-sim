@@ -20,9 +20,9 @@ Item {
     property string label: ""
 
     implicitWidth:  720
-    implicitHeight: 324
+    implicitHeight: 360
     Layout.minimumWidth:  340
-    Layout.minimumHeight: 280
+    Layout.minimumHeight: 270
 
     Rectangle {
         anchors.fill: parent
@@ -74,17 +74,20 @@ Item {
         }
 
         // ---- Nano illustration -------------------------------------
-        // Height tracks the image's actual 1500x571 aspect (ratio
-        // 2.627). Cap at 108 px so the LCD and the I/O row both fit
-        // at typical panel sizes. Scales down with the panel width
-        // via the aspect formula and bottoms out at minimumHeight.
+        // Layout.fillHeight makes the Nano absorb whatever vertical
+        // space the title / hardware / I/O rows leave behind, so the
+        // illustration scales up on tall panels and shrinks down when
+        // the window gets squeezed. The Image element inside uses
+        // PreserveAspectFit, so the painted board stays in proportion
+        // at every size.
         ArduinoNano {
             id: nano
             chip: root.chip
             power: bridge && bridge.engineRunning
-            Layout.fillWidth: true
-            Layout.preferredHeight: Math.min(width / (1500.0 / 571.0), 108)
-            Layout.minimumHeight: 60
+            Layout.fillWidth:  true
+            Layout.fillHeight: true
+            Layout.minimumHeight: 50
+            Layout.maximumHeight: 220
         }
 
         Connections {
@@ -97,21 +100,21 @@ Item {
             }
         }
 
-        // ---- Hardware row: LCD (flex width) + Buzzer ---------------
-        // LCD width grows with the panel up to maximumWidth; height
-        // stays clamped because the LCD font scales with its height
-        // and gets uncomfortably big past 44 px.
+        // ---- Hardware row: LCD + Buzzer (centered as a group) ------
+        // Both flank-spacers expand equally, so the LCD/buzzer pair
+        // sits in the middle of the row. The LCD width itself scales
+        // with the panel width (clamped 200..340) so the text grows
+        // on wider screens without ever overrunning the 16-char
+        // capacity that the HD44780 actually has.
         RowLayout {
             Layout.fillWidth: true
             Layout.preferredHeight: 46
             spacing: 8
 
+            Item { Layout.fillWidth: true }     // expanding left margin
             LcdWidget {
                 chip: root.chip
-                Layout.fillWidth: true
-                Layout.preferredWidth:  260
-                Layout.minimumWidth:    200
-                Layout.maximumWidth:    340
+                Layout.preferredWidth:  Math.max(200, Math.min(root.width * 0.55, 340))
                 Layout.preferredHeight: 44
                 Layout.maximumHeight:   44
             }
@@ -120,7 +123,7 @@ Item {
                 Layout.preferredWidth:  44
                 Layout.preferredHeight: 44
             }
-            Item { Layout.preferredWidth: 2 }
+            Item { Layout.fillWidth: true }     // expanding right margin
         }
 
         // ---- I/O row: LEDs (left) + Pots (center) + Buttons (right) -
