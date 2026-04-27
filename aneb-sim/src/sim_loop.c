@@ -344,11 +344,31 @@ static void wire_lcd(int idx)
 
 static void wire_chip_irqs(chip_t *c)
 {
-    /* GPIO: watch PORTB / PORTC / PORTD pins 0..7 */
+    /* GPIO: watch PORTB / PORTC / PORTD pins 0..7. Skip the PWM-
+     * capable pins we already track via TIMER_IRQ_OUT_PWMn — when a
+     * PWM channel is active, simavr fires a pin transition for every
+     * rising/falling edge of the carrier (~1 kHz), which on a single
+     * channel is ~6000 events/second. Multiply by four channels
+     * across an active firmware and the engine's stdout floods the
+     * UI's main thread until it freezes. The PWM events emit the
+     * duty cycle directly, which is what the UI actually renders. */
+    static const struct { char port; int bit; } pwm_pins[] = {
+        {'D', 3},   /* OC2B — DOUT0 dimmable LED */
+        {'D', 5},   /* OC0B — LOOP PWM */
+        {'D', 6},   /* OC0A — LDR_LED */
+        {'B', 1},   /* OC1A — free for student use */
+    };
     static const char ports[] = {'B', 'C', 'D'};
     for (size_t p = 0; p < sizeof(ports); p++) {
         char port = ports[p];
         for (int bit = 0; bit < 8; bit++) {
+            bool is_pwm = false;
+            for (size_t k = 0; k < sizeof(pwm_pins)/sizeof(*pwm_pins); k++) {
+                if (pwm_pins[k].port == port && pwm_pins[k].bit == bit) {
+                    is_pwm = true; break;
+                }
+            }
+            if (is_pwm) continue;
             avr_irq_t *irq = avr_io_getirq(c->avr,
                                            AVR_IOCTL_IOPORT_GETIRQ(port),
                                            bit);
