@@ -6,9 +6,18 @@
 // with the value (see _angle below). Drag vertically or scroll the
 // wheel to change the value.
 //
-// Indicator angle (using Qt rotation: 0° = up, positive = clockwise):
-//   -135° at value 0    -> arrow at SW (~7 o'clock)
-//   -45°  at value 1023 -> arrow at NW (~10 o'clock)
+// Indicator angle.
+//
+// User spec, in math angles (CCW from +X axis):
+//   value 0    -> 240°  (≈ 7 o'clock)
+//   value 1023 -> 300°  (≈ 5 o'clock)
+// with the arrow moving clockwise between them, i.e. the long way
+// through the top of the dial — the classic ~270° potentiometer
+// sweep. In Qt rotation (CW from up):
+//   value 0    -> 210°
+//   value 1023 -> 510°  (≡ 150°)
+// QML interpolates 210→510 linearly so the tip travels through
+// 270 (W), 360 (N), 90 (E), 150 (5 o'clock).
 import QtQuick 2.15
 import QtQuick.Shapes 1.15
 
@@ -25,7 +34,7 @@ Item {
     implicitWidth:  40
     implicitHeight: 60
 
-    readonly property real _angle: -135 + (adcValue / 1023.0) * 90
+    readonly property real _angle: 210 + (adcValue / 1023.0) * 300
 
     // ---- Body (blue plastic) --------------------------------------
     Rectangle {

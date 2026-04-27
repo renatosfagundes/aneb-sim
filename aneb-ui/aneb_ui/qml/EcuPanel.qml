@@ -93,9 +93,9 @@ Item {
             chip: root.chip
             power: bridge && bridge.engineRunning
             Layout.fillWidth: true
-            Layout.preferredHeight: Math.min(width / (1500.0 / 571.0), 140)
+            Layout.preferredHeight: Math.min(width / (1500.0 / 571.0), 100)
             Layout.minimumHeight: 40
-            Layout.maximumHeight: 150
+            Layout.maximumHeight: 110
         }
 
         Connections {
@@ -109,24 +109,25 @@ Item {
         }
 
         // ---- Hardware row: LCD + Buzzer (centered as a group) ------
+        // LCD height tracks ~1/6 of its width with min/max bounds, so
+        // a wider LCD gets proportionally taller (matching the look
+        // of a real 1602 module) instead of staying as a thin strip.
         RowLayout {
             Layout.fillWidth: true
-            Layout.preferredHeight: 44 * root._s
+            Layout.preferredHeight: lcd.Layout.preferredHeight + 4
             spacing: 8 * root._s
 
             Item { Layout.fillWidth: true }
             LcdWidget {
+                id: lcd
                 chip: root.chip
-                // Aim for ~70% of the panel width with no upper cap
-                // beyond what the panel itself imposes — at 16 chars
-                // the HD44780 has a lot of horizontal real estate.
                 Layout.preferredWidth:  Math.max(160, root.width * 0.7)
-                Layout.preferredHeight: 44 * root._s
+                Layout.preferredHeight: Math.max(46, Math.min(Layout.preferredWidth / 6, 90))
             }
             BuzzerWidget {
                 chip: root.chip
-                Layout.preferredWidth:  44 * root._s
-                Layout.preferredHeight: 44 * root._s
+                Layout.preferredWidth:  lcd.Layout.preferredHeight
+                Layout.preferredHeight: lcd.Layout.preferredHeight
             }
             Item { Layout.fillWidth: true }
         }
