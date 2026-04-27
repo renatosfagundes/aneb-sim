@@ -93,9 +93,10 @@ void loop() {
   bool d4 = !digitalRead(DIN4);
   digitalWrite(DOUT1, d1 ? HIGH : LOW);
 
-  // L LED blinks regardless so the user knows the loop is running.
+  // L LED blinks at 1 Hz (toggles every 500 ms) so the user knows
+  // the loop is running without the strobe being distracting.
   unsigned long now = millis();
-  if (now - lastBlink >= 250) {
+  if (now - lastBlink >= 500) {
     blinkOn = !blinkOn;
     digitalWrite(L_LED, blinkOn ? HIGH : LOW);
     lastBlink = now;
@@ -119,5 +120,5 @@ void loop() {
   if (a3 < 10)  lcd.print(' ');
   lcd.print(a3 / 10);   // 0..102 — fits in 3 chars
 
-  delay(40);
+  delay(100);    // 10 Hz refresh — readable, low simulator load
 }
