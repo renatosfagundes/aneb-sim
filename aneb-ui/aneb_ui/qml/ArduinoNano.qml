@@ -171,8 +171,6 @@ Item {
             color: lo.brightness > 0.05 ? lo.color : "#2a2a2a"
             opacity: lo.brightness > 0.05 ? lo.brightness : 0.55
             border.color: "#101010"; border.width: 1
-            Behavior on color   { ColorAnimation  { duration: 60 } }
-            Behavior on opacity { NumberAnimation { duration: 60 } }
             Rectangle {
                 anchors.top: parent.top; anchors.left: parent.left
                 anchors.topMargin:  parent.height * 0.10
@@ -247,8 +245,6 @@ Item {
                 ? Math.max(0.95 * po._level(), 0.4)
                 : 0.35
             border.color: "#0a0a0a"; border.width: 0.5
-            Behavior on color   { ColorAnimation  { duration: 60 } }
-            Behavior on opacity { NumberAnimation { duration: 60 } }
         }
     }
 }

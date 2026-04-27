@@ -106,5 +106,4 @@ Item {
         opacity: 0.18 + 0.25 * root.brightness
     }
 
-    Behavior on brightness { NumberAnimation { duration: 80 } }
 }

@@ -73,7 +73,6 @@ Item {
                 anchors.fill: parent
                 rotation: root._angle
                 transformOrigin: Item.Center
-                Behavior on rotation { NumberAnimation { duration: 60 } }
 
                 ShapePath {
                     strokeColor: "transparent"
@@ -125,35 +124,61 @@ Item {
     //
     // Angular drag — click anywhere on the knob and the arrow snaps
     // to the click angle, then drag to spin it like a real knob.
-    // Maps the click position to the same 240°→300° (long-way CW)
-    // arc the visual indicator uses; positions inside the dead-zone
-    // (between 5 o'clock and 7 o'clock) snap to whichever end is
-    // closer.
+    //
+    // To keep the Qt main loop from stalling under rapid drag, the
+    // visible arrow updates immediately on every mouse move but
+    // bridge.setAdc is throttled: at most one command every 33 ms
+    // while moving, plus a guaranteed final command when motion
+    // stops. The engine sees ~30 ADC commands/sec instead of 100+,
+    // which keeps the firmware loop and the LCD-event pipeline from
+    // overwhelming the UI.
+    property int  _pendingAdc: 0
+    property bool _hasPending: false
+
+    Timer {
+        id: adcTimer
+        interval: 100               // 10 Hz — engine-side ADC update rate
+        repeat: false
+        onTriggered: root._flushAdc()
+    }
+
+    function _flushAdc() {
+        if (!_hasPending) return
+        _hasPending = false
+        if (typeof bridge !== "undefined" && bridge) {
+            bridge.setAdc(root.chip, root.channel, _pendingAdc)
+        }
+    }
+
+    function _queueAdc(v) {
+        _pendingAdc = v
+        _hasPending = true
+        if (!adcTimer.running) {
+            // Send the first value of a new drag immediately, then
+            // start the rate-limit window.
+            _flushAdc()
+            adcTimer.start()
+        }
+    }
+
     function _setFromMouse(mx, my) {
         var cx = body.width  / 2
         var cy = body.height / 2
-        // atan2 in screen coords (Y down): 0=E, +90=S, -90=N, ±180=W.
-        // Qt rotation is CW from N, i.e. screen-atan2 + 90.
         var qtRot = Math.atan2(my - cy, mx - cx) * 180 / Math.PI + 90
-        if (qtRot < 0)   qtRot += 360
+        if (qtRot < 0)    qtRot += 360
         if (qtRot >= 360) qtRot -= 360
-        // Unroll relative to the value-0 anchor (210°), CW.
         var unrolled = (qtRot - 210 + 360) % 360
         var v
         if (unrolled <= 300) {
             v = Math.round(unrolled / 300 * 1023)
         } else {
-            // Dead-zone (between 5 and 7 o'clock). Snap to whichever
-            // end the click was nearer to.
             v = (unrolled - 300) < 30 ? 1023 : 0
         }
         if (v < root.minValue) v = root.minValue
         if (v > root.maxValue) v = root.maxValue
         if (v !== root.adcValue) {
-            root.adcValue = v
-            if (typeof bridge !== "undefined" && bridge) {
-                bridge.setAdc(root.chip, root.channel, v)
-            }
+            root.adcValue = v        // visible arrow tracks instantly
+            _queueAdc(v)             // engine update is rate-limited
         }
     }
 
@@ -165,14 +190,15 @@ Item {
         onPositionChanged:  function(evt) {
             if (pressed) root._setFromMouse(evt.x, evt.y)
         }
+        onReleased:         { root._flushAdc() }   // make sure final value lands
         onWheel: function(evt) {
             var step = (evt.angleDelta.y > 0 ? 32 : -32)
             var newV = root.adcValue + step
             if (newV < root.minValue) newV = root.minValue
             if (newV > root.maxValue) newV = root.maxValue
-            root.adcValue = newV
-            if (typeof bridge !== "undefined" && bridge) {
-                bridge.setAdc(root.chip, root.channel, newV)
+            if (newV !== root.adcValue) {
+                root.adcValue = newV
+                root._queueAdc(newV)
             }
         }
     }
