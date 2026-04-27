@@ -124,43 +124,10 @@ Item {
     //
     // Angular drag — click anywhere on the knob and the arrow snaps
     // to the click angle, then drag to spin it like a real knob.
-    //
-    // To keep the Qt main loop from stalling under rapid drag, the
-    // visible arrow updates immediately on every mouse move but
-    // bridge.setAdc is throttled: at most one command every 33 ms
-    // while moving, plus a guaranteed final command when motion
-    // stops. The engine sees ~30 ADC commands/sec instead of 100+,
-    // which keeps the firmware loop and the LCD-event pipeline from
-    // overwhelming the UI.
-    property int  _pendingAdc: 0
-    property bool _hasPending: false
-
-    Timer {
-        id: adcTimer
-        interval: 100               // 10 Hz — engine-side ADC update rate
-        repeat: false
-        onTriggered: root._flushAdc()
-    }
-
-    function _flushAdc() {
-        if (!_hasPending) return
-        _hasPending = false
-        if (typeof bridge !== "undefined" && bridge) {
-            bridge.setAdc(root.chip, root.channel, _pendingAdc)
-        }
-    }
-
-    function _queueAdc(v) {
-        _pendingAdc = v
-        _hasPending = true
-        if (!adcTimer.running) {
-            // Send the first value of a new drag immediately, then
-            // start the rate-limit window.
-            _flushAdc()
-            adcTimer.start()
-        }
-    }
-
+    // setAdc fires on every value change. The earlier rate-limit was
+    // only needed because PWM-pin events were flooding the UI from
+    // the engine side; now that those are filtered out at the
+    // source, ~60 ADC commands per second of dragging is fine.
     function _setFromMouse(mx, my) {
         var cx = body.width  / 2
         var cy = body.height / 2
@@ -177,8 +144,10 @@ Item {
         if (v < root.minValue) v = root.minValue
         if (v > root.maxValue) v = root.maxValue
         if (v !== root.adcValue) {
-            root.adcValue = v        // visible arrow tracks instantly
-            _queueAdc(v)             // engine update is rate-limited
+            root.adcValue = v
+            if (typeof bridge !== "undefined" && bridge) {
+                bridge.setAdc(root.chip, root.channel, v)
+            }
         }
     }
 
@@ -190,7 +159,6 @@ Item {
         onPositionChanged:  function(evt) {
             if (pressed) root._setFromMouse(evt.x, evt.y)
         }
-        onReleased:         { root._flushAdc() }   // make sure final value lands
         onWheel: function(evt) {
             var step = (evt.angleDelta.y > 0 ? 32 : -32)
             var newV = root.adcValue + step
@@ -198,7 +166,9 @@ Item {
             if (newV > root.maxValue) newV = root.maxValue
             if (newV !== root.adcValue) {
                 root.adcValue = newV
-                root._queueAdc(newV)
+                if (typeof bridge !== "undefined" && bridge) {
+                    bridge.setAdc(root.chip, root.channel, newV)
+                }
             }
         }
     }
