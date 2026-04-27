@@ -75,6 +75,12 @@ typedef struct i2c_lcd {
     bool     auto_increment;     /* entry-mode I/D bit */
     bool     display_on;
     bool     backlight_on;
+
+    /* Last content sent to the on_changed callback. Used to suppress
+     * spurious events when firmware re-writes characters that don't
+     * actually change the visible display. */
+    char     last_emitted[LCD_ROWS * LCD_COLS];
+    bool     have_emitted;
 } i2c_lcd_t;
 
 /* ----- Lifecycle ---------------------------------------------------- */

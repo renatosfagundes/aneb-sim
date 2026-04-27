@@ -322,15 +322,24 @@ static void wire_lcd(int idx)
     avr_irq_register_notify(irq + TWI_IRQ_OUTPUT, on_twi_msg,
                             (void *)(intptr_t)idx);
 
-    avr_irq_t *avr_twi_in  = avr_io_getirq(c->avr, AVR_IOCTL_TWI_GETIRQ('0'),
+    /* The atmega328p's TWI peripheral is registered with name=0 (the
+     * default in megax8.h's struct init), NOT '0' (0x30). Look it up
+     * with both forms to be robust to either. */
+    avr_irq_t *avr_twi_in  = avr_io_getirq(c->avr, AVR_IOCTL_TWI_GETIRQ(0),
                                            TWI_IRQ_INPUT);
-    avr_irq_t *avr_twi_out = avr_io_getirq(c->avr, AVR_IOCTL_TWI_GETIRQ('0'),
+    avr_irq_t *avr_twi_out = avr_io_getirq(c->avr, AVR_IOCTL_TWI_GETIRQ(0),
                                            TWI_IRQ_OUTPUT);
+    if (!avr_twi_in)  avr_twi_in  = avr_io_getirq(c->avr, AVR_IOCTL_TWI_GETIRQ('0'),
+                                                  TWI_IRQ_INPUT);
+    if (!avr_twi_out) avr_twi_out = avr_io_getirq(c->avr, AVR_IOCTL_TWI_GETIRQ('0'),
+                                                  TWI_IRQ_OUTPUT);
     if (avr_twi_in)  avr_connect_irq(irq + TWI_IRQ_INPUT,  avr_twi_in);
     if (avr_twi_out) avr_connect_irq(avr_twi_out, irq + TWI_IRQ_OUTPUT);
 
-    proto_emit_log("info", "wired %s.lcd (I2C 0x%02x)",
-                   c->id, LCD_I2C_ADDR);
+    proto_emit_log("info", "wired %s.lcd (I2C 0x%02x, twi_in=%s twi_out=%s)",
+                   c->id, LCD_I2C_ADDR,
+                   avr_twi_in  ? "ok" : "MISSING",
+                   avr_twi_out ? "ok" : "MISSING");
 }
 
 static void wire_chip_irqs(chip_t *c)

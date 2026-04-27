@@ -56,6 +56,21 @@ static void emit_changed(i2c_lcd_t *lcd)
     if (!lcd->on_changed) return;
     char line0[LCD_COLS + 1], line1[LCD_COLS + 1];
     i2c_lcd_get_lines(lcd, line0, line1);
+
+    /* Suppress when nothing visible actually changed — avoids
+     * flooding the wire with identical lcd events when firmware
+     * re-prints unchanged content every loop iteration (e.g. a 25 Hz
+     * UI refresh that overwrites the same digits). */
+    char snapshot[LCD_ROWS * LCD_COLS];
+    memcpy(snapshot,                      line0, LCD_COLS);
+    memcpy(snapshot + LCD_COLS,           line1, LCD_COLS);
+    if (lcd->have_emitted &&
+        memcmp(snapshot, lcd->last_emitted, sizeof(snapshot)) == 0) {
+        return;
+    }
+    memcpy(lcd->last_emitted, snapshot, sizeof(snapshot));
+    lcd->have_emitted = true;
+
     lcd->on_changed(lcd->ctx, line0, line1);
 }
 
@@ -149,6 +164,8 @@ void i2c_lcd_reset(i2c_lcd_t *lcd)
     lcd->hi_nibble      = 0;
     lcd->have_hi_nibble = false;
     lcd->in_init_8bit   = true;
+    memset(lcd->last_emitted, 0, sizeof(lcd->last_emitted));
+    lcd->have_emitted   = false;
 }
 
 void i2c_lcd_write_byte(i2c_lcd_t *lcd, uint8_t byte)
