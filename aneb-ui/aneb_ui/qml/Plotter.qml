@@ -49,7 +49,6 @@ Item {
         }
         _enabled = d
     }
-    Component.onCompleted: _initEnabled()
 
     function _color(idx) { return _palette[idx % _palette.length] }
 
@@ -197,7 +196,11 @@ Item {
         function onPlotSeqChanged() { root._refresh() }
     }
 
-    // First paint: nothing has fired plotSeqChanged yet, so do an
-    // initial refresh so the chart isn't blank.
-    Component.onCompleted: _refresh()
+    // Single onCompleted handler — initialises the trace toggles and
+    // does a first refresh so the chart isn't blank before the first
+    // plotSeqChanged tick arrives.
+    Component.onCompleted: {
+        _initEnabled()
+        _refresh()
+    }
 }
