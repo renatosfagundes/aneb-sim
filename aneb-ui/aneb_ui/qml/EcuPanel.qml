@@ -20,9 +20,9 @@ Item {
     property string label: ""
 
     implicitWidth:  720
-    implicitHeight: 360
+    implicitHeight: 324
     Layout.minimumWidth:  340
-    Layout.minimumHeight: 300
+    Layout.minimumHeight: 280
 
     Rectangle {
         anchors.fill: parent
@@ -75,17 +75,16 @@ Item {
 
         // ---- Nano illustration -------------------------------------
         // Height tracks the image's actual 1500x571 aspect (ratio
-        // 2.627). Cap at 128 px so it doesn't dominate the panel —
-        // the LCD and the I/O row need the rest of the vertical
-        // space. Scales down with the panel width via the aspect
-        // formula and bottoms out at minimumHeight.
+        // 2.627). Cap at 108 px so the LCD and the I/O row both fit
+        // at typical panel sizes. Scales down with the panel width
+        // via the aspect formula and bottoms out at minimumHeight.
         ArduinoNano {
             id: nano
             chip: root.chip
             power: bridge && bridge.engineRunning
             Layout.fillWidth: true
-            Layout.preferredHeight: Math.min(width / (1500.0 / 571.0), 128)
-            Layout.minimumHeight: 70
+            Layout.preferredHeight: Math.min(width / (1500.0 / 571.0), 108)
+            Layout.minimumHeight: 60
         }
 
         Connections {
@@ -98,39 +97,43 @@ Item {
             }
         }
 
-        // ---- Hardware row: LCD (flex) + Buzzer ---------------------
-        // LCD is the panel's main display surface — let it grow with
-        // the panel width up to maximumWidth. Buzzer keeps its fixed
-        // size like the rest of the input/output controls.
+        // ---- Hardware row: LCD (flex width) + Buzzer ---------------
+        // LCD width grows with the panel up to maximumWidth; height
+        // stays clamped because the LCD font scales with its height
+        // and gets uncomfortably big past 44 px.
         RowLayout {
             Layout.fillWidth: true
-            Layout.preferredHeight: 60
-            spacing: 12
+            Layout.preferredHeight: 46
+            spacing: 8
 
             LcdWidget {
                 chip: root.chip
                 Layout.fillWidth: true
-                Layout.preferredWidth:  280
-                Layout.minimumWidth:    220
-                Layout.maximumWidth:    420
-                Layout.preferredHeight: 56
+                Layout.preferredWidth:  260
+                Layout.minimumWidth:    200
+                Layout.maximumWidth:    340
+                Layout.preferredHeight: 44
+                Layout.maximumHeight:   44
             }
             BuzzerWidget {
                 chip: root.chip
-                Layout.preferredWidth:  50
-                Layout.preferredHeight: 50
+                Layout.preferredWidth:  44
+                Layout.preferredHeight: 44
             }
-            Item { Layout.preferredWidth: 4 }
+            Item { Layout.preferredWidth: 2 }
         }
 
         // ---- I/O row: LEDs (left) + Pots (center) + Buttons (right) -
         // One row holds every input and output control so vertical
         // space isn't wasted on a separate trimpot row. LEDs anchor to
         // the left edge, buttons to the right, and the four trimpots
-        // float in the middle gap.
+        // float in the middle gap. Sized to exactly fit a 2x2 buttons
+        // grid (2 * 56 button height + 4 rowSpacing) plus 4 px of
+        // breathing room.
         RowLayout {
             Layout.fillWidth: true
-            Layout.preferredHeight: 120
+            Layout.preferredHeight: 116
+            Layout.minimumHeight:   116
             spacing: 8
 
             // 2x2 LED grid: DOUT0 amber, DOUT1 green, L red, LDR blue.

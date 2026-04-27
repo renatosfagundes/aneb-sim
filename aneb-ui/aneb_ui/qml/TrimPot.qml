@@ -1,15 +1,16 @@
-// TrimPot.qml — circular knob with a rotating arrow indicator.
+// TrimPot.qml — circular knob with a brass center and a rotating
+// arrow indicator.
 //
-// Body is a static blue plastic disc; the indicator (a thin pointer
-// from center toward the rim) rotates with the value. Drag vertically
-// or scroll the wheel to change the value.
+// Body is a static blue plastic disc; on top of it sits a brass-
+// colored center cap, and on top of that an arrow shape that rotates
+// with the value (see _angle below). Drag vertically or scroll the
+// wheel to change the value.
 //
 // Indicator angle (using Qt rotation: 0° = up, positive = clockwise):
 //   -135° at value 0    -> arrow at SW (~7 o'clock)
 //   -45°  at value 1023 -> arrow at NW (~10 o'clock)
-// The arrow sweeps the LEFT side of the dial through 9 o'clock as the
-// value rises, like a left-handed fuel gauge.
 import QtQuick 2.15
+import QtQuick.Shapes 1.15
 
 Item {
     id: root
@@ -41,49 +42,52 @@ Item {
         }
         border.color: "#082030"; border.width: 1
 
-        // Subtle inner darkening so the body reads as a recessed cup
-        // rather than a flat sticker.
+        // Brass center disc — same yellow-ish cap as before.
         Rectangle {
-            anchors.fill: parent
-            anchors.margins: 1
-            radius: width / 2
-            color: "transparent"
-            border.color: Qt.rgba(0, 0, 0, 0.28)
-            border.width: 1
-        }
-
-        // Center pivot — small dark dot that visually anchors the
-        // arrow at the knob's center of rotation.
-        Rectangle {
+            id: brass
             anchors.centerIn: parent
-            width:  parent.width  * 0.18
-            height: parent.height * 0.18
+            width:  parent.width  * 0.56
+            height: parent.height * 0.56
             radius: width / 2
-            color: "#0a1622"
-            border.color: "#04080d"; border.width: 1
-        }
+            gradient: Gradient {
+                GradientStop { position: 0.0; color: "#e8c878" }
+                GradientStop { position: 1.0; color: "#806030" }
+            }
+            border.color: "#403018"; border.width: 1
 
-        // Arrow indicator — a thin white marker that rotates with
-        // the value. Wrapped in an Item with the rotation applied so
-        // the rectangle's anchors stay simple.
-        Item {
-            anchors.centerIn: parent
-            width:  parent.width
-            height: parent.height
-            rotation: root._angle
-            transformOrigin: Item.Center
-            Behavior on rotation { NumberAnimation { duration: 60 } }
+            // Arrow indicator — triangular tip + thin shaft, drawn
+            // with QtQuick.Shapes so the tip is a real triangle
+            // instead of a clipped rectangle. Rotates around the
+            // brass disc's center as the value changes.
+            Shape {
+                id: arrow
+                anchors.fill: parent
+                rotation: root._angle
+                transformOrigin: Item.Center
+                Behavior on rotation { NumberAnimation { duration: 60 } }
 
-            Rectangle {
-                anchors.horizontalCenter: parent.horizontalCenter
-                anchors.top: parent.top
-                anchors.topMargin: parent.height * 0.10
-                width:  Math.max(2, parent.width * 0.07)
-                height: parent.height * 0.36
-                radius: width / 2
-                color: "#fafaff"
-                border.color: Qt.rgba(0, 0, 0, 0.35)
-                border.width: 1
+                ShapePath {
+                    strokeColor: "transparent"
+                    fillColor:   "#1a1a1a"
+
+                    // Path traces an arrow pointing straight up
+                    // within the brass disc, anchored at its
+                    // bounding-box center for clean rotation.
+                    startX: arrow.width / 2
+                    startY: arrow.height * 0.08
+                    PathLine { x: arrow.width / 2 + arrow.width * 0.22
+                               y: arrow.height * 0.42 }
+                    PathLine { x: arrow.width / 2 + arrow.width * 0.07
+                               y: arrow.height * 0.42 }
+                    PathLine { x: arrow.width / 2 + arrow.width * 0.07
+                               y: arrow.height * 0.92 }
+                    PathLine { x: arrow.width / 2 - arrow.width * 0.07
+                               y: arrow.height * 0.92 }
+                    PathLine { x: arrow.width / 2 - arrow.width * 0.07
+                               y: arrow.height * 0.42 }
+                    PathLine { x: arrow.width / 2 - arrow.width * 0.22
+                               y: arrow.height * 0.42 }
+                }
             }
         }
     }
