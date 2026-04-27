@@ -10,6 +10,8 @@ CanMonitor    1.0 CanMonitor.qml
 CanInject     1.0 CanInject.qml
 SerialConsole       1.0 SerialConsole.qml
 SerialConsoleWindow 1.0 SerialConsoleWindow.qml
+Plotter             1.0 Plotter.qml
+PlotterWindow       1.0 PlotterWindow.qml
 EcuPanel      1.0 EcuPanel.qml
 LcdWidget     1.0 LcdWidget.qml
 BuzzerWidget  1.0 BuzzerWidget.qml

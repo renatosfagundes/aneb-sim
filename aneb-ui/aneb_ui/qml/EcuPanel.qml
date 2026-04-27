@@ -70,6 +70,12 @@ Item {
                 font.pixelSize: 10 * root._s
                 onClicked: consoleWindow.visible = !consoleWindow.visible
             }
+            Button {
+                text: plotterWindow.visible ? "Plot ▾" : "Plot ▸"
+                Layout.preferredHeight: 22 * root._s
+                font.pixelSize: 10 * root._s
+                onClicked: plotterWindow.visible = !plotterWindow.visible
+            }
             Item { Layout.fillWidth: true }   // expanding spacer
             CanIndicator {
                 chip: root.chip
@@ -80,6 +86,11 @@ Item {
 
         SerialConsoleWindow {
             id: consoleWindow
+            chip:  root.chip
+            label: root.label
+        }
+        PlotterWindow {
+            id: plotterWindow
             chip:  root.chip
             label: root.label
         }

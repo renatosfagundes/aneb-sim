@@ -40,11 +40,13 @@ import json
 import logging
 from pathlib import Path
 
-from PyQt6.QtCore    import QObject, pyqtProperty, pyqtSignal, pyqtSlot
+from PyQt6.QtCore    import (QObject, QPointF, QTimer, pyqtProperty,
+                              pyqtSignal, pyqtSlot)
 from PyQt6.QtWidgets import QFileDialog
 
-from .sim_proxy import SimProxy
-from .state     import SimState
+from .plot_buffers import PlotBuffers, Signal as PlotSignal
+from .sim_proxy    import SimProxy
+from .state        import SimState
 
 
 log = logging.getLogger(__name__)
@@ -54,6 +56,26 @@ NANO_COORDS_PATH = Path(__file__).resolve().parent / "qml_assets" / "arduino-coo
 
 LCD_COLS = 16
 LCD_ROWS = 2
+
+# All signals the plotter knows how to sample. The QML chooses which
+# ones to render; the buffer always has data ready for any of them.
+PLOT_CHIPS   = ("ecu1", "ecu2", "ecu3", "ecu4", "mcu")
+PLOT_SIGNALS = (
+    PlotSignal("adc", "0"),
+    PlotSignal("adc", "1"),
+    PlotSignal("adc", "2"),
+    PlotSignal("adc", "3"),
+    PlotSignal("pwm", "PD3"),    # DOUT0 dimmable
+    PlotSignal("pwm", "PD5"),    # LOOP
+    PlotSignal("pwm", "PD6"),    # LDR_LED
+    PlotSignal("pwm", "PB1"),    # free
+    PlotSignal("pin", "PB5"),    # L LED
+    PlotSignal("pin", "PD4"),    # DOUT1
+    PlotSignal("pin", "PC4"),    # DIN1 / A4
+    PlotSignal("pin", "PC5"),    # DIN2 / A5
+    PlotSignal("pin", "PB1"),    # DIN3 / D9 (also pwm-capable)
+    PlotSignal("pin", "PB0"),    # DIN4 / D8
+)
 
 
 def _load_nano_coords() -> dict:
@@ -79,6 +101,7 @@ class QmlBridge(QObject):
     canStateSeqChanged  = pyqtSignal()
     engineRunningChanged = pyqtSignal()
     lcdLinesChanged     = pyqtSignal()
+    plotSeqChanged      = pyqtSignal()
 
     # Per-event signals carrying the new payload, for QML widgets that
     # want streaming (serial console).
@@ -98,6 +121,19 @@ class QmlBridge(QObject):
         # full snapshot of both lines on every change, so this dict
         # just mirrors the latest snapshot per chip.
         self._lcd_lines: dict[str, list[str]] = {}
+
+        # Plotter rolling-window buffers. Sampled on a QTimer rather
+        # than driven by events, so the plotter's UI work is decoupled
+        # from the engine's event rate (the M6 lesson). 20 Hz × 10 s
+        # window = 200 points per (chip, signal) trace.
+        self._plot         = PlotBuffers()
+        self._plot_targets = [
+            (chip, sig) for chip in PLOT_CHIPS for sig in PLOT_SIGNALS
+        ]
+        self._plot_timer = QTimer(self)
+        self._plot_timer.setInterval(50)   # 20 Hz
+        self._plot_timer.timeout.connect(self._tick_plot)
+        self._plot_timer.start()
 
         # Wire SimState's signals to our notifiers.
         state.pin_changed.connect      (self._on_pin_changed)
@@ -133,6 +169,14 @@ class QmlBridge(QObject):
 
     def _on_can_tx_appended(self, _evt):
         self.canFramesSeqChanged.emit()
+
+    def _tick_plot(self) -> None:
+        """Sample one snapshot of every (chip, signal) the plotter
+        cares about and notify QML. Cheap because the buffer just
+        appends to a deque per slot — no allocation in the hot path
+        beyond the deque slot itself."""
+        self._plot.tick(self._state, self._plot_targets)
+        self.plotSeqChanged.emit()
 
     def _on_can_state_changed(self, _chip, _tec, _rec, _state):
         self.canStateSeqChanged.emit()
@@ -184,6 +228,45 @@ class QmlBridge(QObject):
         # Return a fresh copy so QML re-evaluates dependent bindings.
         return {chip: list(rows) for chip, rows in self._lcd_lines.items()}
 
+    @pyqtSlot(str, str, result="QVariantList")
+    def plotSeries(self, chip: str, signal_key: str) -> list:
+        """Return the rolling-window samples for one (chip, signal).
+
+        `signal_key` is "kind:name" — e.g. "adc:0", "pwm:PD6",
+        "pin:PB5". The QML plotter passes the same keys it gets from
+        plotSignals(), so they round-trip cleanly.
+
+        Returns a list of QPointF so QtCharts.LineSeries.append() can
+        consume each entry directly.
+        """
+        try:
+            kind, name = signal_key.split(":", 1)
+        except ValueError:
+            return []
+        return [QPointF(t, v)
+                for t, v in self._plot.series(chip, PlotSignal(kind, name))]
+
+    @pyqtSlot(result="QVariantList")
+    def plotSignals(self) -> list:
+        """List of {key, kind, name, label, range} dicts the plotter
+        UI can render checkboxes for. Static — same for every chip."""
+        return [
+            {"key": "adc:0", "label": "AIN0",  "axis": "adc"},
+            {"key": "adc:1", "label": "AIN1",  "axis": "adc"},
+            {"key": "adc:2", "label": "AIN2",  "axis": "adc"},
+            {"key": "adc:3", "label": "AIN3",  "axis": "adc"},
+            {"key": "pwm:PD3", "label": "DOUT0 PWM",  "axis": "pwm"},
+            {"key": "pwm:PD6", "label": "LDR PWM",    "axis": "pwm"},
+            {"key": "pwm:PD5", "label": "LOOP PWM",   "axis": "pwm"},
+            {"key": "pwm:PB1", "label": "D9 PWM",     "axis": "pwm"},
+            {"key": "pin:PB5", "label": "L LED",      "axis": "digital"},
+            {"key": "pin:PD4", "label": "DOUT1",      "axis": "digital"},
+            {"key": "pin:PC4", "label": "DIN1 (A4)",  "axis": "digital"},
+            {"key": "pin:PC5", "label": "DIN2 (A5)",  "axis": "digital"},
+            {"key": "pin:PB1", "label": "DIN3 (D9)",  "axis": "digital"},
+            {"key": "pin:PB0", "label": "DIN4 (D8)",  "axis": "digital"},
+        ]
+
     # ---- Slots called from QML ---------------------------------------
 
     @pyqtSlot(str, str, int)
@@ -192,6 +275,9 @@ class QmlBridge(QObject):
 
     @pyqtSlot(str, int, int)
     def setAdc(self, chip: str, ch: int, val: int) -> None:
+        # Cache the value in SimState first so the plotter sees it
+        # at its next sample tick, then forward to the engine.
+        self._state.update_adc(chip, ch, val)
         self._proxy.cmd_adc(chip, ch, val)
 
     @pyqtSlot(str, str)

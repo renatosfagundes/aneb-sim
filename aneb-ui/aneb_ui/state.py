@@ -27,6 +27,7 @@ class SimState(QObject):
     uart_appended     = pyqtSignal(str, str)            # chip, decoded chunk
     can_tx_appended   = pyqtSignal(dict)                # full frame record
     can_state_changed = pyqtSignal(str, int, int, str)  # chip, tec, rec, state
+    adc_changed       = pyqtSignal(str, int, int)        # chip, channel, val
     lcd_changed       = pyqtSignal(str, str, str)        # chip, line0, line1
     log_appended      = pyqtSignal(dict)
 
@@ -42,6 +43,10 @@ class SimState(QObject):
         # 16x2 LCD content per chip. Engine sends a full snapshot of
         # both lines on every change, so no merging on this side.
         self._lcd:       dict[str, list[str]]         = {}
+        # ADC values per chip × channel — UI-driven (no engine event;
+        # the bridge writes here when forwarding cmd_adc). The plotter
+        # samples this snapshot at its tick rate.
+        self._adc:       dict[str, dict[int, int]]    = {c: {} for c in CHIPS}
         self._log:       list[dict[str, Any]]         = []
 
     # ---------- accessors --------------------------------------------
@@ -101,6 +106,19 @@ class SimState(QObject):
             chip, int(evt.get("tec", 0)), int(evt.get("rec", 0)),
             str(evt.get("state", "active")),
         )
+
+    def update_adc(self, chip: str, channel: int, val: int) -> None:
+        """Cache a UI-driven ADC value. Called from QmlBridge.setAdc.
+
+        Not driven by any wire event — ADC stays UI→engine only, so
+        this is the canonical record of "what the UI just told the
+        engine the ADC channel reads as".
+        """
+        if not chip or channel < 0 or channel > 7:
+            return
+        v = max(0, min(1023, int(val)))
+        self._adc.setdefault(chip, {})[channel] = v
+        self.adc_changed.emit(chip, channel, v)
 
     def update_lcd(self, evt: dict) -> None:
         chip  = evt.get("chip")

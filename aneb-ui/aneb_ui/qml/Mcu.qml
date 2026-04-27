@@ -44,11 +44,22 @@ Item {
                 font.pixelSize: 10 * root._s
                 onClicked: mcuConsole.visible = !mcuConsole.visible
             }
+            Button {
+                text: mcuPlotter.visible ? "Plot ▾" : "Plot ▸"
+                Layout.preferredHeight: 22 * root._s
+                font.pixelSize: 10 * root._s
+                onClicked: mcuPlotter.visible = !mcuPlotter.visible
+            }
             Item { Layout.fillWidth: true }
         }
 
         SerialConsoleWindow {
             id: mcuConsole
+            chip:  "mcu"
+            label: "MCU"
+        }
+        PlotterWindow {
+            id: mcuPlotter
             chip:  "mcu"
             label: "MCU"
         }
