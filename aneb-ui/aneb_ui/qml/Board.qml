@@ -99,8 +99,8 @@ Item {
 
                 Mcu {
                     Layout.fillWidth: true
-                    Layout.preferredHeight: 360
-                    Layout.minimumHeight: 240
+                    Layout.preferredHeight: 240
+                    Layout.minimumHeight: 200
                 }
                 CanInject {
                     Layout.fillWidth: true

@@ -8,7 +8,8 @@ PushButton    1.0 PushButton.qml
 CanIndicator  1.0 CanIndicator.qml
 CanMonitor    1.0 CanMonitor.qml
 CanInject     1.0 CanInject.qml
-SerialConsole 1.0 SerialConsole.qml
+SerialConsole       1.0 SerialConsole.qml
+SerialConsoleWindow 1.0 SerialConsoleWindow.qml
 EcuPanel      1.0 EcuPanel.qml
 LcdWidget     1.0 LcdWidget.qml
 BuzzerWidget  1.0 BuzzerWidget.qml

@@ -3,12 +3,13 @@
 // resizes and never overflow the panel.
 //
 // Layout from top to bottom:
-//   - Title row     : ECU label + CAN status indicator
-//   - Nano          : the board illustration
-//   - Hardware row  : LCD on the left, buzzer on the right
-//   - Pots row      : four trim pots
-//   - I/O row       : 2x2 grid of breakout LEDs + 2x2 grid of buttons
-//   - Serial console: fills the remaining vertical space
+//   - Title row : ECU label + Console toggle + CAN status indicator
+//   - Nano      : the board illustration
+//   - Hardware  : LCD on the left, buzzer on the right
+//   - I/O row   : 2x2 LEDs + 4 trimpots + 2x2 buttons
+//
+// The serial console is no longer inline — clicking the Console
+// toggle button pops up a separate top-level window per chip.
 import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
@@ -19,7 +20,9 @@ Item {
     property string label: ""
 
     implicitWidth:  720
-    implicitHeight: 460
+    implicitHeight: 360
+    Layout.minimumWidth:  340
+    Layout.minimumHeight: 300
 
     Rectangle {
         anchors.fill: parent
@@ -34,7 +37,7 @@ Item {
         anchors.margins: 8
         spacing: 4
 
-        // ---- Title row: label + CAN status -------------------------
+        // ---- Title row: label + Console toggle + CAN status --------
         RowLayout {
             Layout.fillWidth: true
             Layout.preferredHeight: 22
@@ -48,7 +51,12 @@ Item {
                 font.bold: true
                 Layout.preferredWidth: 60
             }
-            Item { Layout.fillWidth: true }   // left spacer
+            Button {
+                text: consoleWindow.visible ? "Console ▾" : "Console ▸"
+                Layout.preferredHeight: 22
+                onClicked: consoleWindow.visible = !consoleWindow.visible
+            }
+            Item { Layout.fillWidth: true }   // expanding spacer
             CanIndicator {
                 chip: root.chip
                 Layout.preferredWidth: 200
@@ -56,16 +64,28 @@ Item {
             }
         }
 
+        // The window itself is hidden by default; the Console button
+        // above toggles it. Each ECU owns its own window so the user
+        // can have multiple consoles open at once.
+        SerialConsoleWindow {
+            id: consoleWindow
+            chip:  root.chip
+            label: root.label
+        }
+
         // ---- Nano illustration -------------------------------------
         // Height tracks the image's actual 1500x571 aspect (ratio
-        // 2.627) so the painted region exactly fills the layout cell.
+        // 2.627). Cap at 128 px so it doesn't dominate the panel —
+        // the LCD and the I/O row need the rest of the vertical
+        // space. Scales down with the panel width via the aspect
+        // formula and bottoms out at minimumHeight.
         ArduinoNano {
             id: nano
             chip: root.chip
             power: bridge && bridge.engineRunning
             Layout.fillWidth: true
-            Layout.preferredHeight: Math.min(width / (1500.0 / 571.0), 150)
-            Layout.minimumHeight: 80
+            Layout.preferredHeight: Math.min(width / (1500.0 / 571.0), 128)
+            Layout.minimumHeight: 70
         }
 
         Connections {
@@ -78,24 +98,29 @@ Item {
             }
         }
 
-        // ---- Hardware row: LCD + Buzzer ----------------------------
+        // ---- Hardware row: LCD (flex) + Buzzer ---------------------
+        // LCD is the panel's main display surface — let it grow with
+        // the panel width up to maximumWidth. Buzzer keeps its fixed
+        // size like the rest of the input/output controls.
         RowLayout {
             Layout.fillWidth: true
-            Layout.preferredHeight: 50
+            Layout.preferredHeight: 60
             spacing: 12
 
             LcdWidget {
                 chip: root.chip
-                Layout.preferredWidth:  208
-                Layout.preferredHeight: 44
+                Layout.fillWidth: true
+                Layout.preferredWidth:  280
+                Layout.minimumWidth:    220
+                Layout.maximumWidth:    420
+                Layout.preferredHeight: 56
             }
-            Item { Layout.fillWidth: true }    // spacer
             BuzzerWidget {
                 chip: root.chip
-                Layout.preferredWidth:  46
-                Layout.preferredHeight: 46
+                Layout.preferredWidth:  50
+                Layout.preferredHeight: 50
             }
-            Item { Layout.preferredWidth: 8 }
+            Item { Layout.preferredWidth: 4 }
         }
 
         // ---- I/O row: LEDs (left) + Pots (center) + Buttons (right) -
@@ -226,12 +251,5 @@ Item {
             }
         }
 
-        // ---- Serial console — fills remaining space ----------------
-        SerialConsole {
-            chip: root.chip
-            Layout.fillWidth: true
-            Layout.fillHeight: true
-            Layout.minimumHeight: 50
-        }
     }
 }

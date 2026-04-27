@@ -1,12 +1,13 @@
 // Mcu.qml — daughterboard panel for the ATmega328PB controller.
 // Uses QtQuick.Layouts to flex on resize.
 import QtQuick 2.15
+import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
 
 Item {
     id: root
     implicitWidth:  460
-    implicitHeight: 360
+    implicitHeight: 240
 
     Rectangle {
         anchors.fill: parent
@@ -21,13 +22,30 @@ Item {
         anchors.margins: 10
         spacing: 6
 
-        Text {
-            text: "MCU  ATmega328PB"
-            color: "#cdfac0"
-            font.family: "Consolas"
-            font.pixelSize: 14
-            font.bold: true
+        RowLayout {
+            Layout.fillWidth: true
             Layout.preferredHeight: 22
+            spacing: 10
+
+            Text {
+                text: "MCU  ATmega328PB"
+                color: "#cdfac0"
+                font.family: "Consolas"
+                font.pixelSize: 14
+                font.bold: true
+            }
+            Button {
+                text: mcuConsole.visible ? "Console ▾" : "Console ▸"
+                Layout.preferredHeight: 22
+                onClicked: mcuConsole.visible = !mcuConsole.visible
+            }
+            Item { Layout.fillWidth: true }
+        }
+
+        SerialConsoleWindow {
+            id: mcuConsole
+            chip:  "mcu"
+            label: "MCU"
         }
 
         // Mode-selector buttons.
@@ -53,8 +71,8 @@ Item {
             chip: "mcu"
             power: bridge && bridge.engineRunning
             Layout.fillWidth: true
-            Layout.preferredHeight: Math.min(width * (160.0 / 420.0), 140)
-            Layout.minimumHeight: 70
+            Layout.preferredHeight: Math.min(width / (1500.0 / 571.0), 128)
+            Layout.minimumHeight: 60
         }
         Connections {
             target: bridge
@@ -66,11 +84,6 @@ Item {
             }
         }
 
-        SerialConsole {
-            chip: "mcu"
-            Layout.fillWidth: true
-            Layout.fillHeight: true
-            Layout.minimumHeight: 60
-        }
+        Item { Layout.fillHeight: true }   // bottom filler
     }
 }
