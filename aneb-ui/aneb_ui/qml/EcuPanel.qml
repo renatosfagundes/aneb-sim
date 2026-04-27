@@ -93,9 +93,9 @@ Item {
             chip: root.chip
             power: bridge && bridge.engineRunning
             Layout.fillWidth: true
-            Layout.preferredHeight: width / (1500.0 / 571.0)
+            Layout.preferredHeight: Math.min(width / (1500.0 / 571.0), 140)
             Layout.minimumHeight: 40
-            Layout.maximumHeight: 220
+            Layout.maximumHeight: 150
         }
 
         Connections {
@@ -117,7 +117,10 @@ Item {
             Item { Layout.fillWidth: true }
             LcdWidget {
                 chip: root.chip
-                Layout.preferredWidth:  Math.max(140, Math.min(root.width * 0.6, 360 * root._s))
+                // Aim for ~70% of the panel width with no upper cap
+                // beyond what the panel itself imposes — at 16 chars
+                // the HD44780 has a lot of horizontal real estate.
+                Layout.preferredWidth:  Math.max(160, root.width * 0.7)
                 Layout.preferredHeight: 44 * root._s
             }
             BuzzerWidget {
