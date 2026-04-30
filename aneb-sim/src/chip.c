@@ -25,6 +25,8 @@ int chip_init(chip_t *c, const char *id, const char *mcu_name)
     avr_init(c->avr);
     c->avr->frequency = 16000000UL;
 
+    pthread_mutex_init(&c->avr_lock, NULL);
+    c->pace_init = false;
     c->running = false;
     c->paused  = false;
     c->cycles  = 0;
@@ -90,5 +92,6 @@ void chip_free(chip_t *c)
         avr_terminate(c->avr);
         c->avr = NULL;
     }
+    pthread_mutex_destroy(&c->avr_lock);
     c->running = false;
 }

@@ -76,6 +76,13 @@ Item {
                 font.pixelSize: 10 * root._s
                 onClicked: plotterWindow.visible = !plotterWindow.visible
             }
+            Button {
+                text: "Eject"
+                Layout.preferredHeight: 22 * root._s
+                font.pixelSize: 10 * root._s
+                palette.buttonText: "#ff6655"
+                onClicked: { if (bridge) bridge.unloadChip(root.chip) }
+            }
             Item { Layout.fillWidth: true }   // expanding spacer
             CanIndicator {
                 chip: root.chip

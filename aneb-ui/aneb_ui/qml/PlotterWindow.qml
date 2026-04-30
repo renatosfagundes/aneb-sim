@@ -32,6 +32,7 @@ Window {
     Plotter {
         anchors.fill: parent
         anchors.margins: 4
-        chip: root.chip
+        chip:   root.chip
+        active: root.visible
     }
 }

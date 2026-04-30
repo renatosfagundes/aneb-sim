@@ -104,6 +104,8 @@ class QmlBridge(QObject):
     lcdLinesChanged     = pyqtSignal()
     plotSeqChanged      = pyqtSignal()
 
+    speedChanged = pyqtSignal()
+
     # Per-event signals carrying the new payload, for QML widgets that
     # want streaming (serial console).
     uartAppended = pyqtSignal(str, str)   # chip, data — engine -> UI
@@ -115,6 +117,7 @@ class QmlBridge(QObject):
         self._state = state
         self._proxy = proxy
         self._engine_running = False
+        self._speed = 0.0
         self._nano_coords = _load_nano_coords()
 
         # Per-chip 16x2 LCD state — sourced from `lcd` events emitted
@@ -122,6 +125,16 @@ class QmlBridge(QObject):
         # full snapshot of both lines on every change, so this dict
         # just mirrors the latest snapshot per chip.
         self._lcd_lines: dict[str, list[str]] = {}
+
+        # Cached snapshots for hot-path properties.  Rebuilt at most
+        # once per notify-signal emission so repeated QML reads within
+        # a single signal propagation don't each re-allocate the dict.
+        self._pin_states_dirty = True
+        self._pin_states_cache: dict = {}
+        self._pwm_duties_dirty = True
+        self._pwm_duties_cache: dict = {}
+        self._adc_values_dirty = True
+        self._adc_values_cache: dict = {}
 
         # Plotter rolling-window buffers. Sampled on a QTimer rather
         # than driven by events, so the plotter's UI work is decoupled
@@ -152,12 +165,15 @@ class QmlBridge(QObject):
     # ---- SimState slots ----------------------------------------------
 
     def _on_pin_changed(self, _chip, _pin, _val):
+        self._pin_states_dirty = True
         self.pinSeqChanged.emit()
 
     def _on_pwm_changed(self, _chip, _pin, _duty):
+        self._pwm_duties_dirty = True
         self.pwmSeqChanged.emit()
 
     def _on_adc_changed(self, _chip, _ch, _val):
+        self._adc_values_dirty = True
         self.adcSeqChanged.emit()
 
     def _on_uart_appended(self, chip: str, data: str):
@@ -211,22 +227,31 @@ class QmlBridge(QObject):
 
     @pyqtProperty("QVariantMap", notify=pinSeqChanged)
     def pinStates(self) -> dict:
-        # Return a shallow snapshot per chip — QML can't observe nested
-        # mutations anyway, so a fresh dict is no worse.
-        return {chip: dict(pins) for chip, pins in self._state._pins.items()}
+        if self._pin_states_dirty:
+            self._pin_states_cache = {
+                chip: dict(pins) for chip, pins in self._state._pins.items()
+            }
+            self._pin_states_dirty = False
+        return self._pin_states_cache
 
     @pyqtProperty("QVariantMap", notify=pwmSeqChanged)
     def pwmDuties(self) -> dict:
-        return {chip: dict(pwm) for chip, pwm in self._state._pwm.items()}
+        if self._pwm_duties_dirty:
+            self._pwm_duties_cache = {
+                chip: dict(pwm) for chip, pwm in self._state._pwm.items()
+            }
+            self._pwm_duties_dirty = False
+        return self._pwm_duties_cache
 
     @pyqtProperty("QVariantMap", notify=adcSeqChanged)
     def adcValues(self) -> dict:
-        # Channel keys come back as JS strings since QML's QVariantMap
-        # is more comfortable with string keys than ints.
-        return {
-            chip: {str(ch): v for ch, v in chans.items()}
-            for chip, chans in self._state._adc.items()
-        }
+        if self._adc_values_dirty:
+            self._adc_values_cache = {
+                chip: {str(ch): v for ch, v in chans.items()}
+                for chip, chans in self._state._adc.items()
+            }
+            self._adc_values_dirty = False
+        return self._adc_values_cache
 
     @pyqtProperty("QVariantList", notify=canFramesSeqChanged)
     def canFrames(self) -> list:
@@ -333,11 +358,36 @@ class QmlBridge(QObject):
 
     @pyqtSlot(str)
     def openLoadDialog(self, chip: str) -> None:
-        # QFileDialog lives in QtWidgets — fine to use from a bridge
-        # that's owned by the QApplication.
         path, _ = QFileDialog.getOpenFileName(
             None, f"Load firmware for {chip}",
             "", "Intel hex (*.hex);;All files (*.*)"
         )
         if path:
             self._proxy.cmd_load(chip, path)
+
+    @pyqtSlot()
+    def openLoadAllDialog(self) -> None:
+        """Flash ECU 1-4 with the same hex file."""
+        path, _ = QFileDialog.getOpenFileName(
+            None, "Flash all ECUs with firmware",
+            "", "Intel hex (*.hex);;All files (*.*)"
+        )
+        if path:
+            for chip in ("ecu1", "ecu2", "ecu3", "ecu4"):
+                self._proxy.cmd_load(chip, path)
+
+    @pyqtSlot(str)
+    def unloadChip(self, chip: str) -> None:
+        """Stop a chip and clear its firmware."""
+        self._proxy.cmd_unload(chip)
+
+    @pyqtSlot(float)
+    def setSpeed(self, factor: float) -> None:
+        """Set real-time multiplier: 0.0 = flat-out, 1.0 = real-time."""
+        self._speed = max(0.0, float(factor))
+        self._proxy.cmd_speed(self._speed)
+        self.speedChanged.emit()
+
+    @pyqtProperty(float, notify=speedChanged)
+    def speed(self) -> float:
+        return self._speed

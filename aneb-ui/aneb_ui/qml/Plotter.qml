@@ -191,8 +191,14 @@ Item {
         }
     }
 
+    // `active` is set by the parent window — when false (window hidden)
+    // we skip all chart work entirely and reconnect on first show.
+    property bool active: true
+    onActiveChanged: { if (active) Qt.callLater(_refresh) }
+
     Connections {
         target: bridge
+        enabled: root.active
         function onPlotSeqChanged() { root._refresh() }
     }
 

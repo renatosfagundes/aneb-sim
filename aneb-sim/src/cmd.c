@@ -71,13 +71,13 @@ static void apply_din(cmd_t *cmd)
         proto_emit_log("warn", "din: bad pin '%s' (use PB5, PD2, ...)", cmd->pin);
         return;
     }
+    pthread_mutex_lock(&c->avr_lock);
     avr_irq_t *irq = avr_io_getirq(c->avr,
                                    AVR_IOCTL_IOPORT_GETIRQ(port), bit);
-    if (!irq) {
-        proto_emit_log("warn", "din: no IRQ for pin %s on %s", cmd->pin, c->id);
-        return;
-    }
-    avr_raise_irq(irq, cmd->val ? 1 : 0);
+    if (irq) avr_raise_irq(irq, cmd->val ? 1 : 0);
+    else     proto_emit_log("warn", "din: no IRQ for pin %s on %s",
+                            cmd->pin, c->id);
+    pthread_mutex_unlock(&c->avr_lock);
 }
 
 static void apply_adc(cmd_t *cmd)
@@ -88,8 +88,6 @@ static void apply_adc(cmd_t *cmd)
         return;
     }
 
-    /* Channel resolution: prefer numeric `ch` field, else parse `pin`
-     * as an Arduino-style "A0".."A7" alias. */
     int ch = cmd->channel;
     if (ch == 0 && cmd->pin[0]) {
         int parsed = adc_channel_parse(cmd->pin);
@@ -99,17 +97,17 @@ static void apply_adc(cmd_t *cmd)
         proto_emit_log("warn", "adc: channel %d out of range", ch);
         return;
     }
-    avr_irq_t *irq = avr_io_getirq(c->avr,
-                                   AVR_IOCTL_ADC_GETIRQ,
-                                   ADC_IRQ_ADC0 + ch);
-    if (!irq) {
-        proto_emit_log("warn", "adc: no IRQ for ch%d on %s", ch, c->id);
-        return;
-    }
+
     int v = cmd->val;
     if (v < 0)    v = 0;
     if (v > 1023) v = 1023;
-    avr_raise_irq(irq, (uint32_t)v);
+
+    pthread_mutex_lock(&c->avr_lock);
+    avr_irq_t *irq = avr_io_getirq(c->avr, AVR_IOCTL_ADC_GETIRQ,
+                                   ADC_IRQ_ADC0 + ch);
+    if (irq) avr_raise_irq(irq, (uint32_t)v);
+    else     proto_emit_log("warn", "adc: no IRQ for ch%d on %s", ch, c->id);
+    pthread_mutex_unlock(&c->avr_lock);
 }
 
 static void apply_uart(cmd_t *cmd)
@@ -120,13 +118,17 @@ static void apply_uart(cmd_t *cmd)
         return;
     }
     if (!cmd->data || cmd->data_len == 0) return;
+
+    pthread_mutex_lock(&c->avr_lock);
     avr_irq_t *irq = avr_io_getirq(c->avr,
                                    AVR_IOCTL_UART_GETIRQ('0'),
                                    UART_IRQ_INPUT);
-    if (!irq) return;
-    for (size_t i = 0; i < cmd->data_len; i++) {
-        avr_raise_irq(irq, (uint8_t)cmd->data[i]);
+    if (irq) {
+        for (size_t i = 0; i < cmd->data_len; i++) {
+            avr_raise_irq(irq, (uint8_t)cmd->data[i]);
+        }
     }
+    pthread_mutex_unlock(&c->avr_lock);
 }
 
 static void apply_load(cmd_t *cmd)
@@ -136,7 +138,24 @@ static void apply_load(cmd_t *cmd)
         proto_emit_log("warn", "load: unknown chip '%s'", cmd->chip);
         return;
     }
+    pthread_mutex_lock(&c->avr_lock);
     chip_load_hex(c, cmd->path);
+    c->pace_init = false;
+    pthread_mutex_unlock(&c->avr_lock);
+}
+
+static void apply_unload(cmd_t *cmd)
+{
+    chip_t *c = sim_loop_find(cmd->chip);
+    if (!c) {
+        proto_emit_log("warn", "unload: unknown chip '%s'", cmd->chip);
+        return;
+    }
+    pthread_mutex_lock(&c->avr_lock);
+    c->running   = false;
+    c->pace_init = false;
+    pthread_mutex_unlock(&c->avr_lock);
+    proto_emit_log("info", "chip %s: firmware removed", c->id);
 }
 
 static void apply_reset(cmd_t *cmd)
@@ -146,12 +165,12 @@ static void apply_reset(cmd_t *cmd)
         proto_emit_log("warn", "reset: unknown chip '%s'", cmd->chip);
         return;
     }
+    pthread_mutex_lock(&c->avr_lock);
     chip_reset(c);
+    c->pace_init = false;
+    pthread_mutex_unlock(&c->avr_lock);
 }
 
-/* Decode an ASCII hex string into raw bytes. Returns count written, or
- * -1 on a malformed input (odd length, non-hex digit). Caller-supplied
- * `dst` must hold at least cap bytes; excess input is truncated. */
 static int hex_decode(const char *src, size_t src_len, uint8_t *dst, size_t cap)
 {
     if (src_len % 2 != 0) return -1;
@@ -172,14 +191,10 @@ static int hex_decode(const char *src, size_t src_len, uint8_t *dst, size_t cap)
     return (int)out;
 }
 
-/* Map a chip id ("ecu1".."ecu4") to its MCP2515 instance via the bus
- * attachment list. Returns NULL if the chip has no controller (e.g.
- * "mcu") or the id doesn't exist. */
 static mcp2515_t *can_for_chip(const char *chip_id)
 {
     can_bus_t *bus = sim_loop_bus();
     if (!bus || !chip_id) return NULL;
-    /* The MCP2515's id is "<chip>.can1"; match by prefix. */
     size_t n = strlen(chip_id);
     for (int i = 0; i < bus->num_nodes; i++) {
         mcp2515_t *m = bus->nodes[i];
@@ -210,38 +225,44 @@ static void emit_state(const chip_t *c, const mcp2515_t *m)
 
 static void apply_force_busoff(cmd_t *cmd)
 {
-    chip_t *c = sim_loop_find(cmd->chip);
+    chip_t    *c = sim_loop_find(cmd->chip);
     mcp2515_t *m = can_for_chip(cmd->chip);
     if (!c || !m) {
         proto_emit_log("warn", "force_busoff: no MCP2515 on chip '%s'", cmd->chip);
         return;
     }
+    pthread_mutex_lock(&c->avr_lock);
     mcp2515_force_busoff(m);
+    pthread_mutex_unlock(&c->avr_lock);
     emit_state(c, m);
 }
 
 static void apply_can_errors(cmd_t *cmd)
 {
-    chip_t *c = sim_loop_find(cmd->chip);
+    chip_t    *c = sim_loop_find(cmd->chip);
     mcp2515_t *m = can_for_chip(cmd->chip);
     if (!c || !m) {
         proto_emit_log("warn", "can_errors: no MCP2515 on chip '%s'", cmd->chip);
         return;
     }
+    pthread_mutex_lock(&c->avr_lock);
     if (cmd->err_tx > 0) mcp2515_inject_tx_errors(m, cmd->err_tx);
     if (cmd->err_rx > 0) mcp2515_inject_rx_errors(m, cmd->err_rx);
+    pthread_mutex_unlock(&c->avr_lock);
     emit_state(c, m);
 }
 
 static void apply_can_recover(cmd_t *cmd)
 {
-    chip_t *c = sim_loop_find(cmd->chip);
+    chip_t    *c = sim_loop_find(cmd->chip);
     mcp2515_t *m = can_for_chip(cmd->chip);
     if (!c || !m) {
         proto_emit_log("warn", "can_recover: no MCP2515 on chip '%s'", cmd->chip);
         return;
     }
+    pthread_mutex_lock(&c->avr_lock);
     mcp2515_recover_busoff(m);
+    pthread_mutex_unlock(&c->avr_lock);
     emit_state(c, m);
 }
 
@@ -252,7 +273,6 @@ static void apply_can_inject(cmd_t *cmd)
         proto_emit_log("warn", "can_inject: bus not initialized");
         return;
     }
-    /* The bus name is optional but if present must match. */
     if (cmd->bus[0] && strcmp(cmd->bus, bus->name) != 0) {
         proto_emit_log("warn", "can_inject: unknown bus '%s'", cmd->bus);
         return;
@@ -269,20 +289,22 @@ static void apply_can_inject(cmd_t *cmd)
             proto_emit_log("warn", "can_inject: malformed hex data");
             return;
         }
-        /* If DLC wasn't explicit, infer from decoded length. */
         if (cmd->can_dlc == 0) f.dlc = (uint8_t)n;
     }
 
-    can_bus_inject(bus, &f);
+    /* Thread-safe injection: enqueues into each ECU's can_rx queue so
+     * delivery happens under the target chip's avr_lock in its own thread. */
+    sim_loop_can_inject(&f);
 }
 
 void cmd_apply(cmd_t *cmd)
 {
     switch (cmd->type) {
-    case CMD_DIN:    apply_din(cmd);    break;
-    case CMD_ADC:    apply_adc(cmd);    break;
-    case CMD_UART:   apply_uart(cmd);   break;
-    case CMD_LOAD:   apply_load(cmd);   break;
+    case CMD_DIN:          apply_din(cmd);          break;
+    case CMD_ADC:          apply_adc(cmd);          break;
+    case CMD_UART:         apply_uart(cmd);         break;
+    case CMD_LOAD:         apply_load(cmd);         break;
+    case CMD_UNLOAD:       apply_unload(cmd);       break;
     case CMD_RESET:        apply_reset(cmd);        break;
     case CMD_CAN_INJECT:   apply_can_inject(cmd);   break;
     case CMD_FORCE_BUSOFF: apply_force_busoff(cmd); break;
@@ -292,14 +314,8 @@ void cmd_apply(cmd_t *cmd)
     case CMD_PAUSE:        sim_loop_pause_all();    break;
     case CMD_RESUME:       sim_loop_resume_all();   break;
     case CMD_STEP:
-        /* M1: step is a stub — does a resume-pause sandwich for now.
-         * Full single-stepping by cycles lands when wallclock pacing
-         * arrives in M5 alongside the speed factor. */
-        sim_loop_resume_all();
-        for (uint64_t i = 0; i < cmd->cycles / SIM_CYCLES_PER_TICK; i++) {
-            sim_loop_tick();
-        }
-        sim_loop_pause_all();
+        proto_emit_log("warn",
+            "step not supported in threaded mode; use pause/resume");
         break;
     default:
         proto_emit_log("warn", "cmd: unknown type %d", cmd->type);

@@ -1,8 +1,10 @@
 #include "sim_loop.h"
 
+#include <pthread.h>
 #include <stdatomic.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 
 #include "sim_avr.h"
 #include "avr_ioport.h"
@@ -18,34 +20,161 @@
 #include "pin_names.h"
 #include "proto.h"
 
-/* Board wiring per ECU: ANEB v1.1 has CS=PB2 (Arduino pin 10) and
- * INT=PD2 (Arduino INT0) for the CAN1 MCP2515 controller. */
 #define MCP_CS_PORT   'B'
 #define MCP_CS_BIT     2
 #define MCP_INT_PORT  'D'
 #define MCP_INT_BIT    2
 
-/* I2C 1602 LCD on every ECU at the standard PCF8574 backpack address. */
 #define LCD_I2C_ADDR   0x27
 
-/* ----- module state ---------------------------------------------------- */
+/* ----- global state ---------------------------------------------------- */
 
 static chip_t            g_chips[SIM_MAX_CHIPS];
 static int               g_nchips     = 0;
 static atomic_bool       g_stop_req   = false;
 static atomic_bool       g_paused_all = false;
-static double            g_speed      = 1.0;
+static volatile double   g_speed      = 0.0;
 
-/* One MCP2515 per ECU (4); MCU has none. Indexed by chip index 0..3. */
-static mcp2515_t         g_can[4];
+/* One MCP2515 + LCD per ECU (indices 0..3). Declared early because
+ * drain_can_rx and the thread function both reference them. */
+static mcp2515_t  g_can[4];
+static can_bus_t  g_can1;
+static i2c_lcd_t  g_lcd[4];
+static avr_irq_t *g_lcd_irq[4];
 
-/* Single shared CAN bus (CAN1). All four ECUs are attached. */
-static can_bus_t         g_can1;
+/* ----- per-chip threads ------------------------------------------------ */
 
-/* One I2C 1602 LCD per ECU. The slave's two TWI IRQs are also kept so
- * we can raise ACKs back at the master. */
-static i2c_lcd_t         g_lcd[4];
-static avr_irq_t        *g_lcd_irq[4];   /* base IRQ; +TWI_IRQ_INPUT/OUTPUT */
+static pthread_t g_chip_threads[SIM_MAX_CHIPS];
+
+/* ----- per-chip real-time pacing --------------------------------------- */
+
+static void chip_pace_tick(chip_t *c)
+{
+    double speed = g_speed;
+    if (speed <= 0.0) return;
+
+    uint64_t sim_cycles = c->avr->cycle;
+    uint32_t freq       = c->avr->frequency;
+
+    struct timespec now;
+    clock_gettime(CLOCK_MONOTONIC, &now);
+
+    if (!c->pace_init || sim_cycles < c->pace_sim0) {
+        c->pace_wall0 = now;
+        c->pace_sim0  = sim_cycles;
+        c->pace_init  = true;
+        return;
+    }
+
+    int64_t wall_ns = (int64_t)(now.tv_sec  - c->pace_wall0.tv_sec ) * 1000000000LL
+                    + (int64_t)(now.tv_nsec - c->pace_wall0.tv_nsec);
+    int64_t sim_ns  = (int64_t)(
+        (double)(sim_cycles - c->pace_sim0) / (double)freq * 1e9 / speed);
+    int64_t ahead_ns = sim_ns - wall_ns;
+    if (ahead_ns > 1000000LL) {
+        int64_t sleep_ns = ahead_ns;
+        if (sleep_ns > 50000000LL) sleep_ns = 50000000LL;  /* cap at 50 ms */
+        struct timespec ts = {
+            .tv_sec  = sleep_ns / 1000000000LL,
+            .tv_nsec = sleep_ns % 1000000000LL,
+        };
+        nanosleep(&ts, NULL);
+    }
+}
+
+/* avr->sleep callback: advance cycle counter without sleeping inside
+ * avr_lock.  chip_pace_tick() after the batch does the wall-clock sleep. */
+static void chip_avr_sleep(avr_t *avr, avr_cycle_count_t how_long)
+{
+    avr->cycle += how_long;
+}
+
+/* ----- incoming CAN frame queue per ECU ------------------------------- */
+
+#define CHIP_CAN_RX_CAP 32
+
+typedef struct {
+    mcp2515_frame_t frames[CHIP_CAN_RX_CAP];
+    int             head, tail, count;
+    pthread_mutex_t lock;
+} chip_can_rx_t;
+
+static chip_can_rx_t g_can_rx[4];
+
+/* Enqueue a CAN frame for chip `idx` from any thread. */
+static void chip_can_rx_enqueue(int idx, const mcp2515_frame_t *frame)
+{
+    chip_can_rx_t *q = &g_can_rx[idx];
+    pthread_mutex_lock(&q->lock);
+    if (q->count < CHIP_CAN_RX_CAP) {
+        q->frames[q->tail] = *frame;
+        q->tail = (q->tail + 1) % CHIP_CAN_RX_CAP;
+        q->count++;
+    }
+    pthread_mutex_unlock(&q->lock);
+}
+
+/* Drain and deliver pending CAN frames for chip `idx`.
+ * Must be called from the chip's own thread (before the avr_run batch). */
+static void drain_can_rx(int idx)
+{
+    chip_can_rx_t *q = &g_can_rx[idx];
+    chip_t        *c = &g_chips[idx];
+
+    pthread_mutex_lock(&q->lock);
+    while (q->count > 0) {
+        mcp2515_frame_t f = q->frames[q->head];
+        q->head = (q->head + 1) % CHIP_CAN_RX_CAP;
+        q->count--;
+        pthread_mutex_unlock(&q->lock);
+
+        /* Deliver under avr_lock — mcp2515_rx_frame calls on_mcp_int which
+         * raises an IRQ on this chip's avr_t. */
+        pthread_mutex_lock(&c->avr_lock);
+        if (mcp2515_rx_frame(&g_can[idx], &f))
+            g_can1.frames_delivered++;
+        pthread_mutex_unlock(&c->avr_lock);
+
+        pthread_mutex_lock(&q->lock);
+    }
+    pthread_mutex_unlock(&q->lock);
+}
+
+/* ----- chip simulation thread ----------------------------------------- */
+
+static void *chip_thread_fn(void *arg)
+{
+    int     idx     = (int)(intptr_t)arg;
+    chip_t *c       = &g_chips[idx];
+    bool    has_mcp = (idx < 4);
+
+    while (!atomic_load(&g_stop_req)) {
+        if (has_mcp) drain_can_rx(idx);
+
+        if (atomic_load(&g_paused_all) || !c->running || c->paused) {
+            struct timespec ts = {0, 1000000};
+            nanosleep(&ts, NULL);
+            continue;
+        }
+
+        pthread_mutex_lock(&c->avr_lock);
+        if (c->running && !c->paused) {
+            for (int n = 0; n < SIM_CYCLES_PER_TICK; n++) {
+                int s = chip_step(c);
+                if (s == cpu_Done || s == cpu_Crashed) {
+                    c->running = false;
+                    proto_emit_log("warn", "chip %s: stopped (state=%d)",
+                                   c->id, s);
+                    break;
+                }
+            }
+        }
+        pthread_mutex_unlock(&c->avr_lock);
+
+        if (c->running) chip_pace_tick(c);
+    }
+    return NULL;
+}
 
 /* ----- IRQ callbacks --------------------------------------------------- */
 
@@ -55,7 +184,6 @@ typedef struct {
     int     bit;
 } pin_ctx_t;
 
-/* Statically allocated context array — 5 chips * 3 ports * 8 bits = 120. */
 static pin_ctx_t g_pin_ctx[SIM_MAX_CHIPS * 3 * 8];
 static int       g_pin_ctx_n = 0;
 
@@ -77,20 +205,14 @@ static void on_uart_byte(struct avr_irq_t *irq, uint32_t value, void *param)
     proto_emit_uart(c->id, &b, 1, c->cycles);
 }
 
-/* PWM event glue: simavr's TIMER_IRQ_OUT_PWMn fires (filtered) with the
- * raw OCR value whenever the firmware writes a different duty. We map
- * each (timer, channel) tuple to the AVR pin it physically drives and
- * emit a `pwm` event with duty = value / TOP. For the 8-bit timers
- * (Timer 0 / Timer 2) at fast-PWM with TOP = 255 (the analogWrite()
- * default), this is OCR / 255. */
 typedef struct {
     chip_t  *chip;
     char     port;
     int      bit;
-    uint16_t top;          /* PWM TOP value */
+    uint16_t top;
 } pwm_ctx_t;
 
-static pwm_ctx_t g_pwm_ctx[SIM_MAX_CHIPS * 4];   /* 4 PWM channels per chip */
+static pwm_ctx_t g_pwm_ctx[SIM_MAX_CHIPS * 4];
 static int       g_pwm_ctx_n = 0;
 
 static void on_pwm(struct avr_irq_t *irq, uint32_t value, void *param)
@@ -121,30 +243,14 @@ static void wire_one_pwm(chip_t *c, char timer_letter, int pwm_index,
 
 static void wire_pwm_outputs(chip_t *c)
 {
-    /* Map each PWM channel that does not collide with our board peripheral
-     * wiring (MCP2515 SPI on PB2/PB3 disables Timer 1 OC1B and Timer 2
-     * OC2A). TOPs default to 255 (fast PWM mode that analogWrite uses). */
-    /* Timer 0: OC0A=PD6 (LDR_LED on ECU1), OC0B=PD5 (LOOP on ECU1) */
     wire_one_pwm(c, '0', 0, 'D', 6, 255);
     wire_one_pwm(c, '0', 1, 'D', 5, 255);
-    /* Timer 1: OC1A=PB1 (Arduino 9, free) */
     wire_one_pwm(c, '1', 0, 'B', 1, 255);
-    /* Timer 2: OC2B=PD3 (Arduino 3 = DOUT0, dimmable LED) */
     wire_one_pwm(c, '2', 1, 'D', 3, 255);
 }
 
-/* ----- MCP2515 <-> simavr glue ----------------------------------------
- *
- * One MCP2515 model per ECU, attached to:
- *   - the AVR's SPI peripheral (master TX byte triggers the model;
- *     model returns a byte that we feed back as master RX);
- *   - the CS GPIO pin (PB2) so we know when transactions begin and end;
- *   - the INT0 GPIO pin (PD2), which the model drives low when CANINTF
- *     bits are set and any are masked in CANINTE.
- *
- * Each callback uses the chip index (0..3) as its userdata so we can
- * dispatch back to the right MCP2515 instance and AVR core.
- */
+/* ----- MCP2515 <-> simavr glue ---------------------------------------- */
+
 static void on_mcp_spi_byte(struct avr_irq_t *irq, uint32_t value, void *param)
 {
     (void)irq;
@@ -179,21 +285,25 @@ static void on_mcp_int(void *ctx, int asserted)
     avr_irq_t *int_pin = avr_io_getirq(c->avr,
                                        AVR_IOCTL_IOPORT_GETIRQ(MCP_INT_PORT),
                                        MCP_INT_BIT);
-    /* INT is active LOW: asserted=1 means drive pin low (=0). */
     if (int_pin) avr_raise_irq(int_pin, asserted ? 0 : 1);
 }
 
+/* Called when chip[idx]'s MCP2515 transmits a frame, inside avr_run() with
+ * g_chips[idx].avr_lock held.  Enqueue into each peer's can_rx queue rather
+ * than calling avr_raise_irq on a different chip's avr_t (which would race). */
 static void on_mcp_tx(void *ctx, const mcp2515_frame_t *frame)
 {
     int idx = (int)(intptr_t)ctx;
     if (idx < 0 || idx >= 4) return;
     chip_t *c = &g_chips[idx];
 
-    /* Emit the wire-level can_tx event for the UI / scenario log. */
     proto_emit_can_tx(c->id, g_can1.name, frame, c->cycles);
+    g_can1.frames_broadcast++;
 
-    /* Fan out to peer controllers on the same bus. */
-    can_bus_broadcast(&g_can1, frame, &g_can[idx]);
+    for (int i = 0; i < 4; i++) {
+        if (i == idx) continue;
+        chip_can_rx_enqueue(i, frame);
+    }
 }
 
 static void wire_mcp2515(int idx)
@@ -201,10 +311,6 @@ static void wire_mcp2515(int idx)
     chip_t    *c = &g_chips[idx];
     mcp2515_t *m = &g_can[idx];
 
-    /* Chip id is at most CHIP_ID_MAX-1 chars; ".can1" adds 5 + NUL.
-     * Use bounded %.*s so GCC's -Wformat-truncation analyzer can prove
-     * the output fits — without the precision specifier it conservatively
-     * assumes 279 bytes for an unbounded %s. */
     char id[CHIP_ID_MAX + 8];
     snprintf(id, sizeof(id), "%.*s.can1", (int)(CHIP_ID_MAX - 1), c->id);
     mcp2515_init(m, id);
@@ -213,7 +319,6 @@ static void wire_mcp2515(int idx)
     m->ctx    = (void *)(intptr_t)idx;
     can_bus_attach(&g_can1, m);
 
-    /* SPI: each AVR-master TX byte triggers our model. */
     avr_irq_t *spi_in = avr_io_getirq(c->avr,
                                       AVR_IOCTL_SPI_GETIRQ('0'),
                                       SPI_IRQ_INPUT);
@@ -222,7 +327,6 @@ static void wire_mcp2515(int idx)
                                 (void *)(intptr_t)idx);
     }
 
-    /* CS: edge changes drive transaction boundaries. */
     avr_irq_t *cs = avr_io_getirq(c->avr,
                                   AVR_IOCTL_IOPORT_GETIRQ(MCP_CS_PORT),
                                   MCP_CS_BIT);
@@ -236,23 +340,8 @@ static void wire_mcp2515(int idx)
                    MCP_INT_PORT, MCP_INT_BIT);
 }
 
-/* ----- I2C LCD <-> simavr glue ----------------------------------------
- *
- * The PCF8574-backed 1602 module sits at 0x27 on each ECU's TWI bus.
- * simavr's TWI delivers START / STOP / WRITE / READ events one byte at
- * a time via a single IRQ value carrying msg/addr/data fields. We:
- *
- *   - on START whose 7-bit address matches LCD_I2C_ADDR, mark this LCD
- *     as the selected slave and raise an ACK back at the master;
- *   - while selected, push every WRITE byte into i2c_lcd_write_byte and
- *     ACK each one;
- *   - on STOP, drop the selection;
- *   - reads are NACKed (the backpack is write-only in practice).
- *
- * To raise IRQs back at the AVR TWI master we allocate a 2-entry IRQ
- * pool per LCD (the same convention simavr's i2c_eeprom example uses)
- * and connect those to the AVR's TWI IRQs.
- */
+/* ----- I2C LCD <-> simavr glue ---------------------------------------- */
+
 static void on_lcd_changed(void *ctx, const char *line0, const char *line1)
 {
     int idx = (int)(intptr_t)ctx;
@@ -271,16 +360,12 @@ static void on_twi_msg(struct avr_irq_t *irq, uint32_t value, void *param)
     i2c_lcd_t *lcd = &g_lcd[idx];
     avr_irq_t *to_avr = g_lcd_irq[idx] + TWI_IRQ_INPUT;
 
-    /* The "selected" flag piggy-backs on the LCD struct via the unused
-     * bits of last_byte? No — give it a small dedicated tracker. We
-     * store it in a static array indexed by chip. */
     static bool lcd_selected[4] = {false, false, false, false};
 
     if (v.u.twi.msg & TWI_COND_STOP) {
         lcd_selected[idx] = false;
     }
     if (v.u.twi.msg & TWI_COND_START) {
-        /* Address byte: top 7 bits = slave address, LSB = R/W. */
         uint8_t addr_7bit = (uint8_t)(v.u.twi.addr >> 1);
         bool    is_write  = (v.u.twi.addr & 1) == 0;
         if (addr_7bit == lcd->i2c_addr && is_write) {
@@ -296,13 +381,11 @@ static void on_twi_msg(struct avr_irq_t *irq, uint32_t value, void *param)
         avr_raise_irq(to_avr,
             avr_twi_irq_msg(TWI_COND_ACK, v.u.twi.addr, 1));
     }
-    /* Reads from the backpack are not meaningful for our model; leave
-     * them unanswered (the master will NACK after timeout). */
 }
 
 static const char *_lcd_irq_names[2] = {
-    [TWI_IRQ_INPUT]  = "8>lcd.tx",   /* slave -> AVR (ACK / read data) */
-    [TWI_IRQ_OUTPUT] = "32<lcd.rx",  /* AVR  -> slave (START/STOP/data) */
+    [TWI_IRQ_INPUT]  = "8>lcd.tx",
+    [TWI_IRQ_OUTPUT] = "32<lcd.rx",
 };
 
 static void wire_lcd(int idx)
@@ -316,15 +399,11 @@ static void wire_lcd(int idx)
     lcd->on_changed = on_lcd_changed;
     lcd->ctx        = (void *)(intptr_t)idx;
 
-    /* Allocate this slave's IRQ pair and connect to the AVR's TWI. */
     avr_irq_t *irq = avr_alloc_irq(&c->avr->irq_pool, 0, 2, _lcd_irq_names);
     g_lcd_irq[idx] = irq;
     avr_irq_register_notify(irq + TWI_IRQ_OUTPUT, on_twi_msg,
                             (void *)(intptr_t)idx);
 
-    /* The atmega328p's TWI peripheral is registered with name=0 (the
-     * default in megax8.h's struct init), NOT '0' (0x30). Look it up
-     * with both forms to be robust to either. */
     avr_irq_t *avr_twi_in  = avr_io_getirq(c->avr, AVR_IOCTL_TWI_GETIRQ(0),
                                            TWI_IRQ_INPUT);
     avr_irq_t *avr_twi_out = avr_io_getirq(c->avr, AVR_IOCTL_TWI_GETIRQ(0),
@@ -344,19 +423,8 @@ static void wire_lcd(int idx)
 
 static void wire_chip_irqs(chip_t *c)
 {
-    /* GPIO: watch PORTB / PORTC / PORTD pins 0..7. Skip the PWM-
-     * capable pins we already track via TIMER_IRQ_OUT_PWMn — when a
-     * PWM channel is active, simavr fires a pin transition for every
-     * rising/falling edge of the carrier (~1 kHz), which on a single
-     * channel is ~6000 events/second. Multiply by four channels
-     * across an active firmware and the engine's stdout floods the
-     * UI's main thread until it freezes. The PWM events emit the
-     * duty cycle directly, which is what the UI actually renders. */
     static const struct { char port; int bit; } pwm_pins[] = {
-        {'D', 3},   /* OC2B — DOUT0 dimmable LED */
-        {'D', 5},   /* OC0B — LOOP PWM */
-        {'D', 6},   /* OC0A — LDR_LED */
-        {'B', 1},   /* OC1A — free for student use */
+        {'D', 3}, {'D', 5}, {'D', 6}, {'B', 1},
     };
     static const char ports[] = {'B', 'C', 'D'};
     for (size_t p = 0; p < sizeof(ports); p++) {
@@ -381,8 +449,6 @@ static void wire_chip_irqs(chip_t *c)
         }
     }
 
-    /* UART0 output: TX byte stream from firmware. Disable simavr's stdio
-     * cooked-mode (which would buffer until newline / pause on no listener). */
     uint32_t flags = 0;
     avr_ioctl(c->avr, AVR_IOCTL_UART_GET_FLAGS('0'), &flags);
     flags &= ~AVR_UART_FLAG_STDIO;
@@ -395,7 +461,6 @@ static void wire_chip_irqs(chip_t *c)
         avr_irq_register_notify(uart_out, on_uart_byte, c);
     }
 
-    /* PWM outputs (LDR_LED, LOOP, dimmable DOUT, etc.). */
     wire_pwm_outputs(c);
 }
 
@@ -419,25 +484,37 @@ int sim_loop_init(void)
         if (chip_init(&g_chips[i], roster[i].id, roster[i].mcu) != 0) {
             return -1;
         }
+        g_chips[i].avr->sleep = chip_avr_sleep;
         wire_chip_irqs(&g_chips[i]);
         g_nchips++;
     }
-    /* Single shared CAN bus, attach all four ECUs. Must come before
-     * wire_mcp2515 so that on_tx -> can_bus_broadcast has a target. */
-    can_bus_init(&g_can1, "can1");
 
-    /* Attach an MCP2515 to each ECU (indices 0..3). The MCU at index 4
-     * has no CAN controller. */
     for (int i = 0; i < 4; i++) {
-        wire_mcp2515(i);
+        memset(&g_can_rx[i], 0, sizeof(g_can_rx[i]));
+        pthread_mutex_init(&g_can_rx[i].lock, NULL);
     }
-    /* Attach a 1602 I2C LCD to each ECU's TWI bus. The MCU has no LCD. */
-    for (int i = 0; i < 4; i++) {
-        wire_lcd(i);
-    }
+
+    can_bus_init(&g_can1, "can1");
+    for (int i = 0; i < 4; i++) wire_mcp2515(i);
+    for (int i = 0; i < 4; i++) wire_lcd(i);
+
     proto_emit_log("info",
                    "sim_loop: initialized %d chips, 4 mcp2515, 4 lcd, bus '%s'",
                    g_nchips, g_can1.name);
+    return 0;
+}
+
+int sim_loop_start(void)
+{
+    for (int i = 0; i < g_nchips; i++) {
+        if (pthread_create(&g_chip_threads[i], NULL, chip_thread_fn,
+                           (void *)(intptr_t)i) != 0) {
+            proto_emit_log("error",
+                           "sim_loop_start: failed to create thread %d", i);
+            return -1;
+        }
+    }
+    proto_emit_log("info", "sim_loop: started %d chip threads", g_nchips);
     return 0;
 }
 
@@ -456,49 +533,48 @@ chip_t *sim_loop_chip(int index)
     return &g_chips[index];
 }
 
-int sim_loop_count(void)
+int sim_loop_count(void) { return g_nchips; }
+
+struct can_bus *sim_loop_bus(void) { return &g_can1; }
+
+void sim_loop_can_inject(const mcp2515_frame_t *frame)
 {
-    return g_nchips;
+    if (!frame) return;
+    g_can1.frames_injected++;
+    g_can1.frames_broadcast++;
+    for (int i = 0; i < 4; i++) chip_can_rx_enqueue(i, frame);
 }
 
-struct can_bus *sim_loop_bus(void)
+void sim_loop_pause_all(void)
 {
-    return &g_can1;
-}
-
-bool sim_loop_tick(void)
-{
-    if (atomic_load(&g_paused_all)) return true;
-
-    int active = 0;
+    atomic_store(&g_paused_all, true);
     for (int i = 0; i < g_nchips; i++) {
-        chip_t *c = &g_chips[i];
-        if (!c->running || c->paused) continue;
-        active++;
-        for (int n = 0; n < SIM_CYCLES_PER_TICK; n++) {
-            int s = chip_step(c);
-            if (s == cpu_Done || s == cpu_Crashed) {
-                c->running = false;
-                proto_emit_log("warn", "chip %s: stopped (state=%d)", c->id, s);
-                break;
-            }
-        }
+        pthread_mutex_lock(&g_chips[i].avr_lock);
+        g_chips[i].pace_init = false;
+        pthread_mutex_unlock(&g_chips[i].avr_lock);
     }
-
-    /* TODO(M5): wallclock pacing when g_speed != 0. For M1 we run flat-out. */
-    (void)g_speed;
-
-    return active > 0;
 }
 
-void sim_loop_pause_all(void)   { atomic_store(&g_paused_all, true); }
 void sim_loop_resume_all(void)  { atomic_store(&g_paused_all, false); }
-void sim_loop_set_speed(double factor) { g_speed = factor; }
-void sim_loop_request_stop(void){ atomic_store(&g_stop_req, true); }
-bool sim_loop_should_stop(void) { return atomic_load(&g_stop_req); }
+
+void sim_loop_set_speed(double factor)
+{
+    g_speed = factor;
+    for (int i = 0; i < g_nchips; i++) {
+        pthread_mutex_lock(&g_chips[i].avr_lock);
+        g_chips[i].pace_init = false;
+        pthread_mutex_unlock(&g_chips[i].avr_lock);
+    }
+}
+
+void sim_loop_request_stop(void) { atomic_store(&g_stop_req, true); }
+bool sim_loop_should_stop(void)  { return atomic_load(&g_stop_req); }
 
 void sim_loop_shutdown(void)
 {
+    atomic_store(&g_stop_req, true);
+    for (int i = 0; i < g_nchips; i++) pthread_join(g_chip_threads[i], NULL);
+    for (int i = 0; i < 4; i++) pthread_mutex_destroy(&g_can_rx[i].lock);
     for (int i = 0; i < g_nchips; i++) chip_free(&g_chips[i]);
     g_nchips = 0;
 }

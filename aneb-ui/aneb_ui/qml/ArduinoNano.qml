@@ -194,10 +194,11 @@ Item {
 
         visible: xNorm >= 0 && yNorm >= 0
 
-        function _level() {
-            if (!po.pinPort) return 0
-            return Math.max(root.level(po.pinPort), root.duty(po.pinPort))
-        }
+        // Evaluated once per signal change; the four visual bindings
+        // below read this property instead of re-calling root.level/duty.
+        property real _lev: po.pinPort
+                            ? Math.max(root.level(po.pinPort), root.duty(po.pinPort))
+                            : 0
 
         // Compute the dot's pixel-space center, then snap it to the
         // nearest integer pixel before deriving x/y. Without rounding,
@@ -230,8 +231,8 @@ Item {
             height: parent.height * 1.8
             radius: width / 2
             color: "#3cff5a"
-            opacity: po._level() * 0.5
-            visible: po._level() > 0.05
+            opacity: po._lev * 0.5
+            visible: po._lev > 0.05
         }
         // Pad dot — always visible. Faint when LOW so you can see
         // every calibrated pad even before any firmware drives a pin;
@@ -240,9 +241,9 @@ Item {
         Rectangle {
             anchors.fill: parent
             radius: width / 2
-            color: po._level() > 0.05 ? "#3cff5a" : "#1a1a1a"
-            opacity: po._level() > 0.05
-                ? Math.max(0.95 * po._level(), 0.4)
+            color: po._lev > 0.05 ? "#3cff5a" : "#1a1a1a"
+            opacity: po._lev > 0.05
+                ? Math.max(0.95 * po._lev, 0.4)
                 : 0.35
             border.color: "#0a0a0a"; border.width: 0.5
         }

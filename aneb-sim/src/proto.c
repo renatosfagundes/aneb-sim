@@ -159,6 +159,7 @@ static cmd_type_t parse_cmd_type(const char *s)
     if (!strcmp(s, "adc"))    return CMD_ADC;
     if (!strcmp(s, "uart"))   return CMD_UART;
     if (!strcmp(s, "load"))   return CMD_LOAD;
+    if (!strcmp(s, "unload")) return CMD_UNLOAD;
     if (!strcmp(s, "reset"))  return CMD_RESET;
     if (!strcmp(s, "speed"))  return CMD_SPEED;
     if (!strcmp(s, "pause"))  return CMD_PAUSE;

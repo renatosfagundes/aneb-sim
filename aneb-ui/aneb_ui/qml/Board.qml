@@ -29,44 +29,115 @@ Item {
         // ---- Title strip / toolbar --------------------------------
         Rectangle {
             Layout.fillWidth: true
-            Layout.preferredHeight: 44
+            Layout.preferredHeight: 80
             color: "#0d2418"
             opacity: 0.92
             border.color: "#3e6b4d"
 
-            RowLayout {
+            ColumnLayout {
                 anchors.fill: parent
                 anchors.leftMargin: 14
                 anchors.rightMargin: 14
-                spacing: 10
+                anchors.topMargin: 4
+                anchors.bottomMargin: 4
+                spacing: 2
 
-                Text {
-                    text: "Automotive Network Evaluation Board v1.1 — simulator"
-                    color: "#cdfac0"
-                    font.family: "Consolas"
-                    font.pixelSize: 16
-                    font.bold: true
-                }
-                Item { Layout.preferredWidth: 18 }
-                Repeater {
-                    model: ["ecu1", "ecu2", "ecu3", "ecu4", "mcu"]
+                // ---- Row 1: title + load buttons + pause/resume + status
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 8
+
+                    Text {
+                        text: "ANEB v1.1 — simulator"
+                        color: "#cdfac0"
+                        font.family: "Consolas"
+                        font.pixelSize: 14
+                        font.bold: true
+                    }
+                    Item { Layout.preferredWidth: 6 }
+                    Repeater {
+                        model: ["ecu1", "ecu2", "ecu3", "ecu4", "mcu"]
+                        Button {
+                            text: "Load " + modelData.toUpperCase()
+                            onClicked: { if (bridge) bridge.openLoadDialog(modelData) }
+                        }
+                    }
+                    Button { text: "Pause";  onClicked: { if (bridge) bridge.pauseEngine() } }
+                    Button { text: "Resume"; onClicked: { if (bridge) bridge.resumeEngine() } }
                     Button {
-                        text: "Load " + modelData.toUpperCase()
-                        onClicked: { if (bridge) bridge.openLoadDialog(modelData) }
+                        text: dashboardWindow.visible ? "Dashboard ▾" : "Dashboard ▸"
+                        onClicked: dashboardWindow.visible = !dashboardWindow.visible
+                    }
+                    Item { Layout.fillWidth: true }
+                    Text {
+                        text: "Engine: " + (bridge && bridge.engineRunning ? "running" : "stopped")
+                        color: (bridge && bridge.engineRunning) ? "#22cc44" : "#ddaa22"
+                        font.family: "Consolas"
+                        font.pixelSize: 11
                     }
                 }
-                Button { text: "Pause";  onClicked: { if (bridge) bridge.pauseEngine() } }
-                Button { text: "Resume"; onClicked: { if (bridge) bridge.resumeEngine() } }
-                Button {
-                    text: dashboardWindow.visible ? "Dashboard ▾" : "Dashboard ▸"
-                    onClicked: dashboardWindow.visible = !dashboardWindow.visible
-                }
-                Item { Layout.fillWidth: true }
-                Text {
-                    text: "Engine: " + (bridge && bridge.engineRunning ? "running" : "stopped")
-                    color: (bridge && bridge.engineRunning) ? "#22cc44" : "#ddaa22"
-                    font.family: "Consolas"
-                    font.pixelSize: 12
+
+                // ---- Row 2: flash-all + speed control
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 8
+
+                    Button {
+                        text: "Flash All ECUs"
+                        onClicked: { if (bridge) bridge.openLoadAllDialog() }
+                    }
+
+                    Item { Layout.preferredWidth: 12 }
+
+                    Text {
+                        text: "Speed:"
+                        color: "#cdfac0"
+                        font.family: "Consolas"
+                        font.pixelSize: 12
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                    TextField {
+                        id: speedField
+                        implicitWidth: 68
+                        implicitHeight: 26
+                        text: bridge ? bridge.speed.toFixed(2) : "0.00"
+                        color: "#cdfac0"
+                        font.family: "Consolas"
+                        font.pixelSize: 12
+                        background: Rectangle {
+                            color: "#1a3a28"; radius: 3
+                            border.color: "#3e6b4d"; border.width: 1
+                        }
+                        Connections {
+                            target: bridge
+                            function onSpeedChanged() {
+                                if (!speedField.activeFocus)
+                                    speedField.text = bridge.speed.toFixed(2)
+                            }
+                        }
+                        onEditingFinished: {
+                            var v = parseFloat(text)
+                            if (!isNaN(v) && v >= 0.0 && bridge) bridge.setSpeed(v)
+                            else text = bridge ? bridge.speed.toFixed(2) : "0.00"
+                        }
+                    }
+                    Text {
+                        text: "(0 = max)"
+                        color: "#7aaa8a"
+                        font.family: "Consolas"
+                        font.pixelSize: 10
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                    Button {
+                        text: "1× RT"
+                        onClicked: { if (bridge) bridge.setSpeed(1.0) }
+                    }
+                    Button {
+                        text: "Max"
+                        onClicked: { if (bridge) bridge.setSpeed(0.0) }
+                    }
+
+                    Item { Layout.fillWidth: true }
                 }
             }
         }

@@ -45,6 +45,7 @@ typedef enum {
     CMD_ADC,         /* set ADC channel value (0..1023) */
     CMD_UART,        /* push bytes into a chip's UART RX */
     CMD_LOAD,        /* load a hex file into a chip */
+    CMD_UNLOAD,      /* stop a chip and clear its firmware */
     CMD_RESET,       /* hard-reset a chip */
     CMD_SPEED,       /* wallclock multiplier (>0) */
     CMD_PAUSE,

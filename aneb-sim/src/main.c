@@ -1,12 +1,10 @@
 /*
- * aneb-sim — engine entry point (M1).
+ * aneb-sim — engine entry point.
  *
  * Boots the canonical 5-chip ANEB roster, optionally pre-loads firmware
- * via CLI flags, then enters the main loop:
- *
- *   1. drain the inbound command queue (filled by the stdin reader thread)
- *   2. tick the simulation forward by one quantum
- *   3. emit any events generated during the tick
+ * via CLI flags, then launches one simulation thread per chip.  The main
+ * thread drains the inbound command queue (filled by the stdin reader) and
+ * sleeps between drains; all AVR execution happens in the chip threads.
  *
  * CLI flags:
  *   --ecu1=PATH     load PATH into ecu1 at startup
@@ -15,9 +13,10 @@
  *   --ecu4=PATH
  *   --mcu=PATH      load PATH into the MCU controller
  *   --no-mcu        skip MCU init (useful for tests that don't need it)
+ *   --speed=N       set real-time multiplier at startup (default 0 = flat-out)
  *
  * Once started, the engine reads JSON-Lines commands from stdin and
- * writes JSON-Lines events to stdout. See docs/PROTOCOL.md.
+ * writes JSON-Lines events to stdout.  See docs/PROTOCOL.md.
  */
 #include <pthread.h>
 #include <signal.h>
@@ -37,7 +36,6 @@ static void *stdin_reader(void *arg)
     (void)arg;
     char line[8192];
     while (fgets(line, sizeof(line), stdin)) {
-        /* Strip trailing newline if present. */
         size_t n = strlen(line);
         while (n > 0 && (line[n - 1] == '\n' || line[n - 1] == '\r')) {
             line[--n] = '\0';
@@ -85,22 +83,24 @@ int main(int argc, char **argv)
     }
     cmd_queue_init();
 
-    /* Pre-load firmware specified on the command line. */
+    double startup_speed = 0.0;
+
+    /* Pre-load firmware and apply flags before threads start. */
     for (int i = 1; i < argc; i++) {
         const char *v;
-        if      ((v = flag_value(argv[i], "--ecu1"))) chip_load_hex(sim_loop_find("ecu1"), v);
-        else if ((v = flag_value(argv[i], "--ecu2"))) chip_load_hex(sim_loop_find("ecu2"), v);
-        else if ((v = flag_value(argv[i], "--ecu3"))) chip_load_hex(sim_loop_find("ecu3"), v);
-        else if ((v = flag_value(argv[i], "--ecu4"))) chip_load_hex(sim_loop_find("ecu4"), v);
-        else if ((v = flag_value(argv[i], "--mcu")))  chip_load_hex(sim_loop_find("mcu"),  v);
-        else if (strcmp(argv[i], "--no-mcu") == 0) {
-            /* leave mcu uninitialized; harmless because chip_step
-             * returns immediately when running == false. */
-        }
+        if      ((v = flag_value(argv[i], "--ecu1")))  chip_load_hex(sim_loop_find("ecu1"), v);
+        else if ((v = flag_value(argv[i], "--ecu2")))  chip_load_hex(sim_loop_find("ecu2"), v);
+        else if ((v = flag_value(argv[i], "--ecu3")))  chip_load_hex(sim_loop_find("ecu3"), v);
+        else if ((v = flag_value(argv[i], "--ecu4")))  chip_load_hex(sim_loop_find("ecu4"), v);
+        else if ((v = flag_value(argv[i], "--mcu")))   chip_load_hex(sim_loop_find("mcu"),  v);
+        else if ((v = flag_value(argv[i], "--speed"))) startup_speed = atof(v);
+        else if (strcmp(argv[i], "--no-mcu") == 0)     { /* leave mcu uninitialized */ }
         else {
             fprintf(stderr, "warning: unknown arg '%s'\n", argv[i]);
         }
     }
+
+    if (startup_speed > 0.0) sim_loop_set_speed(startup_speed);
 
     signal(SIGINT, on_sigint);
 
@@ -111,19 +111,22 @@ int main(int argc, char **argv)
     }
     pthread_detach(reader_tid);
 
+    if (sim_loop_start() != 0) {
+        fprintf(stderr, "fatal: sim_loop_start failed\n");
+        return 1;
+    }
+
     proto_emit_log("info", "aneb-sim ready (proto v%d)", ANEB_PROTO_VERSION);
 
+    /* Main thread: drain the command queue and sleep; chip execution
+     * happens entirely in the per-chip threads launched by sim_loop_start(). */
     while (!sim_loop_should_stop()) {
         cmd_t cmd;
         while (cmd_queue_pop(&cmd) == 0) {
             cmd_apply(&cmd);
         }
-        if (!sim_loop_tick()) {
-            /* No active chips. Don't busy-spin — wait briefly for a load
-             * command from the UI, then re-check. */
-            struct timespec ts = {.tv_sec = 0, .tv_nsec = 1000000};  /* 1 ms */
-            nanosleep(&ts, NULL);
-        }
+        struct timespec ts = {.tv_sec = 0, .tv_nsec = 1000000};  /* 1 ms */
+        nanosleep(&ts, NULL);
     }
 
     proto_emit_log("info", "aneb-sim shutting down");

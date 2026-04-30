@@ -82,7 +82,9 @@ class SimProxy(QObject):
 
     # convenience wrappers — match the JSON command names in PROTOCOL.md.
     def cmd_load   (self, chip: str, path: str) -> None: self.send_command({"c":"load",   "chip": chip, "path": path})
+    def cmd_unload (self, chip: str)            -> None: self.send_command({"c":"unload", "chip": chip})
     def cmd_reset  (self, chip: str)            -> None: self.send_command({"c":"reset",  "chip": chip})
+    def cmd_speed  (self, factor: float)        -> None: self.send_command({"c":"speed",  "speed": float(factor)})
     def cmd_din    (self, chip: str, pin: str, val: int) -> None:
         self.send_command({"c":"din", "chip": chip, "pin": pin, "val": int(bool(val))})
     def cmd_adc    (self, chip: str, ch: int, val: int) -> None:
