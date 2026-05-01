@@ -33,21 +33,21 @@ class QmlMainWindow(QMainWindow):
         self.setWindowTitle("aneb-sim — ANEB v1.1 simulator")
 
         # Fit the window to the screen's available area (excludes the
-        # taskbar) — never start larger than the monitor. We aim for
-        # 1700x1000 if room exists, otherwise 92% of available space.
+        # taskbar) — never start larger than the monitor. The minimum
+        # size needs to be generous enough that each ECU panel keeps
+        # the title row on one line, the LCD visible, and the I/O row
+        # of LEDs+pots+buttons fully on-screen — empirically that's
+        # around 1300×800 for a 2x2 grid + right column.
         screen = QGuiApplication.primaryScreen()
         avail = screen.availableGeometry() if screen else None
         if avail is not None:
-            # 80% of the available area leaves generous breathing room
-            # around the window so the Windows taskbar / title bar /
-            # borders don't push content off-screen.
-            target_w = min(1400, int(avail.width()  * 0.80))
-            target_h = min(820,  int(avail.height() * 0.80))
-            min_w = min(1100, int(avail.width()  * 0.65))
-            min_h = min(660,  int(avail.height() * 0.65))
+            target_w = min(1500, int(avail.width()  * 0.85))
+            target_h = min(900,  int(avail.height() * 0.85))
+            min_w = min(1300, int(avail.width()  * 0.70))
+            min_h = min(800,  int(avail.height() * 0.70))
         else:
-            target_w, target_h = 1300, 780
-            min_w, min_h = 1100, 660
+            target_w, target_h = 1500, 900
+            min_w, min_h = 1300, 800
         self.setMinimumSize(min_w, min_h)
         self.resize(target_w, target_h)
         # Center on the available area.
@@ -86,5 +86,6 @@ class QmlMainWindow(QMainWindow):
         self._proxy.start()
 
     def closeEvent(self, evt) -> None:    # noqa: N802 (Qt signature)
+        self._bridge.stop_uart_bridges()
         self._proxy.stop()
         super().closeEvent(evt)

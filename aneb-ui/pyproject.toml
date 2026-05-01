@@ -15,6 +15,10 @@ license = { text = "TBD" }
 # pip install on a fresh student machine grabs the latest patch.
 dependencies = [
     "PyQt6 >= 6.6, < 7",
+    # pyserial is only used by uart_bridge.py to forward the simulated
+    # UART TCP socket to a com0com virtual COM port pair (Windows).  If
+    # it's missing the bridge fails silently; the TCP path still works.
+    "pyserial >= 3.5, < 4",
 ]
 
 [project.scripts]

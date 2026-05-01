@@ -30,6 +30,9 @@ Item {
     property int    adcValue: 0           // 0..1023 — internal state
     property int    minValue: 0
     property int    maxValue: 1023
+    // Multiplied into the value/label font sizes so the parent panel
+    // can scale text alongside the knob's geometric size.
+    property real   fontScale: 1.0
 
     implicitWidth:  40
     implicitHeight: 60
@@ -102,22 +105,26 @@ Item {
 
     // ---- Labels ---------------------------------------------------
     Text {
+        id: valueLabel
         anchors.top: body.bottom
-        anchors.topMargin: 1
+        anchors.topMargin: 2
         anchors.horizontalCenter: parent.horizontalCenter
         text: root.adcValue
         color: "#cdfac0"
         font.family: "Consolas"
-        font.pixelSize: 9
+        font.pixelSize: 13 * root.fontScale
         font.bold: true
     }
     Text {
-        anchors.top: body.bottom
-        anchors.topMargin: 11
+        // Anchored to the value label's bottom (not body.bottom) so it
+        // can never overlap the value text regardless of fontScale.
+        anchors.top: valueLabel.bottom
+        anchors.topMargin: 1
         anchors.horizontalCenter: parent.horizontalCenter
         text: root.label
         color: "#a8d0b0"
-        font.pixelSize: 7
+        font.family: "Consolas"
+        font.pixelSize: 10 * root.fontScale
     }
 
     // ---- Input ----------------------------------------------------

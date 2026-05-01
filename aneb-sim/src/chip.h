@@ -35,6 +35,13 @@ typedef struct chip {
     struct timespec pace_wall0;
     uint64_t        pace_sim0;
     bool            pace_init;
+
+    /* UART RX pacing: next AVR cycle at which a TCP-sourced byte may be
+     * pushed into the chip's UART.  Throttles delivery to the simavr
+     * UART byte rate so its 64-byte input FIFO can't be overrun by a
+     * burst send (e.g. avrdude's 133-byte STK_PROG_PAGE in one TCP
+     * write).  Updated by sim_loop.c. */
+    uint64_t        uart_rx_due_cycle;
 } chip_t;
 
 /*

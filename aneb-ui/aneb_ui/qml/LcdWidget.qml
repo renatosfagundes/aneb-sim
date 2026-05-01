@@ -9,6 +9,9 @@ import QtQuick 2.15
 Item {
     id: root
     property string chip: ""
+    // Scales the small "16x2" silkscreen label (the character glyphs
+    // already auto-size from the glass height).
+    property real   fontScale: 1.0
 
     implicitWidth:  208
     implicitHeight: 44
@@ -129,6 +132,6 @@ Item {
         text: "16x2"
         color: "#5a7a64"
         font.family: "Consolas"
-        font.pixelSize: 7
+        font.pixelSize: 7 * root.fontScale
     }
 }

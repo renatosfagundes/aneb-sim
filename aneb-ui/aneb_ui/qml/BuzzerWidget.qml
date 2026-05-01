@@ -10,6 +10,9 @@ import QtQuick 2.15
 Item {
     id: root
     property string chip: ""
+    // Multiplied into the BUZZ silkscreen label so the parent panel
+    // can scale text alongside the widget's geometric size.
+    property real fontScale: 1.0
 
     readonly property bool active: {
         if (!bridge || !bridge.pinStates) return false
@@ -114,7 +117,7 @@ Item {
         anchors.horizontalCenter: parent.horizontalCenter
         text: "BUZZ"
         color: root.active ? "#ff8866" : "#a8d0b0"
-        font.family: "Consolas"; font.pixelSize: 7; font.bold: true
+        font.family: "Consolas"; font.pixelSize: 9 * root.fontScale; font.bold: true
         Behavior on color { ColorAnimation { duration: 80 } }
     }
 }

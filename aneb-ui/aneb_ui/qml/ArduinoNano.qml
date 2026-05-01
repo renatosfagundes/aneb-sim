@@ -142,9 +142,12 @@ Item {
         // size. Earlier we floored width and height independently,
         // which flipped landscape SMD LEDs into portrait squares
         // when the panel was tight.
+        // MIN_DIM also tracks the image's height so the LEDs shrink
+        // proportionally with a small Nano (avoids LEDs that look
+        // chunky when the rest of the board has scaled down).
         readonly property real _baseW: wNorm * root._imgW
         readonly property real _baseH: hNorm * root._imgH
-        readonly property real _minDim: 8
+        readonly property real _minDim: Math.max(3, root._imgH * 0.05)
         readonly property real _scale: Math.max(1.0, _minDim / Math.max(1, Math.min(_baseW, _baseH)))
         x: root._imgX + xNorm * root._imgW - width  / 2
         y: root._imgY + yNorm * root._imgH - height / 2

@@ -19,6 +19,7 @@
 #include "mcp2515.h"
 #include "pin_names.h"
 #include "proto.h"
+#include "uart_server.h"
 
 #define MCP_CS_PORT   'B'
 #define MCP_CS_BIT     2
@@ -33,7 +34,10 @@ static chip_t            g_chips[SIM_MAX_CHIPS];
 static int               g_nchips     = 0;
 static atomic_bool       g_stop_req   = false;
 static atomic_bool       g_paused_all = false;
-static volatile double   g_speed      = 0.0;
+/* Default to real-time (1.0×).  Most demos — CAN, LCD, button work —
+ * want millis()-paced behaviour out of the box.  Use the toolbar's Max
+ * button or `--speed=0` to run unthrottled. */
+static volatile double   g_speed      = 1.0;
 
 /* One MCP2515 + LCD per ECU (indices 0..3). Declared early because
  * drain_can_rx and the thread function both reference them. */
@@ -41,6 +45,10 @@ static mcp2515_t  g_can[4];
 static can_bus_t  g_can1;
 static i2c_lcd_t  g_lcd[4];
 static avr_irq_t *g_lcd_irq[4];
+
+/* Cached UART input IRQs — populated in wire_chip_irqs(), used in
+ * chip_thread_fn() to deliver TCP UART RX bytes into each chip. */
+static avr_irq_t *g_uart_rx_irq[SIM_MAX_CHIPS];
 
 /* ----- per-chip threads ------------------------------------------------ */
 
@@ -151,6 +159,23 @@ static void *chip_thread_fn(void *arg)
     while (!atomic_load(&g_stop_req)) {
         if (has_mcp) drain_can_rx(idx);
 
+        /* Reset-on-connect: emulates the DTR pulse that real Arduinos get
+         * when avrdude (or any client) opens the COM port.  This lets
+         * avrdude catch Optiboot's startup window without manual UI clicks.
+         * Set sim speed to 1.0 before flashing so the bootloader runs at
+         * real time and avrdude's STK500 timeouts are met. */
+        if (uart_server_pop_connect(idx)) {
+            pthread_mutex_lock(&c->avr_lock);
+            if (c->running) {
+                chip_reset(c);
+                c->pace_init = false;
+                proto_emit_log("info",
+                               "chip %s: TCP client connected — chip reset",
+                               c->id);
+            }
+            pthread_mutex_unlock(&c->avr_lock);
+        }
+
         if (atomic_load(&g_paused_all) || !c->running || c->paused) {
             struct timespec ts = {0, 1000000};
             nanosleep(&ts, NULL);
@@ -158,6 +183,22 @@ static void *chip_thread_fn(void *arg)
         }
 
         pthread_mutex_lock(&c->avr_lock);
+        /* Deliver bytes that arrived on the TCP UART socket, paced at
+         * the UART byte rate so simavr's 64-byte input FIFO can drain
+         * between pushes.  Without pacing, a single 133-byte STK_PROG_PAGE
+         * from avrdude lands in our ring as one chunk and would raise
+         * 133 IRQs in this batch — 69 of them get dropped (RX overrun)
+         * and Optiboot reads a corrupt page header. */
+        if (g_uart_rx_irq[idx]) {
+            /* 16 MHz / (115200 baud / 10 bits-per-byte) ≈ 1389 cycles. */
+            const uint64_t UART_CYCLES_PER_BYTE = 1400;
+            uint8_t rb;
+            while (c->avr->cycle >= c->uart_rx_due_cycle
+                    && uart_server_pop_rx(idx, &rb)) {
+                avr_raise_irq(g_uart_rx_irq[idx], rb);
+                c->uart_rx_due_cycle = c->avr->cycle + UART_CYCLES_PER_BYTE;
+            }
+        }
         if (c->running && !c->paused) {
             for (int n = 0; n < SIM_CYCLES_PER_TICK; n++) {
                 int s = chip_step(c);
@@ -171,6 +212,9 @@ static void *chip_thread_fn(void *arg)
         }
         pthread_mutex_unlock(&c->avr_lock);
 
+        /* Flush any UART TX bytes that were pushed during the batch. */
+        uart_server_flush_tx(idx);
+
         if (c->running) chip_pace_tick(c);
     }
     return NULL;
@@ -182,18 +226,53 @@ typedef struct {
     chip_t *chip;
     char    port;
     int     bit;
+    /* Rate-limit state: last emitted value + emit timestamp.  Without
+     * this, firmware that toggles a pin in a tight loop (e.g. mcp_can
+     * banging CS at every SPI byte during a stuck begin() retry loop)
+     * floods the UI with thousands of pin events per second, growing
+     * Python's signal queue until QML stops responding. */
+    int             last_val;
+    struct timespec last_emit;
+    bool            emit_pending;
 } pin_ctx_t;
 
 static pin_ctx_t g_pin_ctx[SIM_MAX_CHIPS * 3 * 8];
 static int       g_pin_ctx_n = 0;
 
+/* Cap pin event emission to ~100 Hz per (chip, pin).  Slow user-visible
+ * toggles (button presses, LED blinks, PWM duty changes) are well below
+ * this and pass through; bus-clock-rate toggles get throttled. */
+#define PIN_RATE_LIMIT_NS  10000000   /* 10 ms */
+
 static void on_pin_change(struct avr_irq_t *irq, uint32_t value, void *param)
 {
     (void)irq;
     pin_ctx_t *ctx = (pin_ctx_t *)param;
+    int v = value ? 1 : 0;
+
+    struct timespec now;
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    int64_t dt_ns = (int64_t)(now.tv_sec  - ctx->last_emit.tv_sec ) * 1000000000LL
+                  + (int64_t)(now.tv_nsec - ctx->last_emit.tv_nsec);
+
+    /* Drop redundant same-value notifications outright (some simavr
+     * IO modules fire the IRQ on every PORT write even when nothing
+     * changed). */
+    if (v == ctx->last_val && ctx->last_emit.tv_sec != 0) {
+        return;
+    }
+    if (dt_ns < PIN_RATE_LIMIT_NS && ctx->last_emit.tv_sec != 0) {
+        /* Too soon since last emit — skip this transition.  We'll lose
+         * intermediate states; the UI will see the next emitted value
+         * after the cooldown. */
+        return;
+    }
+
+    ctx->last_val = v;
+    ctx->last_emit = now;
     proto_emit_pin(ctx->chip->id,
                    pin_format(ctx->port, ctx->bit),
-                   value ? 1 : 0,
+                   v,
                    ctx->chip->cycles);
 }
 
@@ -202,7 +281,17 @@ static void on_uart_byte(struct avr_irq_t *irq, uint32_t value, void *param)
     (void)irq;
     chip_t *c = (chip_t *)param;
     uint8_t b = (uint8_t)value;
-    proto_emit_uart(c->id, &b, 1, c->cycles);
+    int idx = (int)(c - g_chips);
+    /* When a TCP client (e.g. avrdude) is attached, the UART bytes are its
+     * binary protocol — emitting one JSON-Lines `uart` event per byte
+     * floods QML's serial console and freezes the UI thread for 10–20 s
+     * during a flash+verify (~10K bytes back-to-back).  Skip the JSON path
+     * while a client is connected; the byte still goes to TCP. */
+    if (!uart_server_has_client(idx))
+        proto_emit_uart(c->id, &b, 1, c->cycles);
+    /* also push into the per-chip TCP UART server TX buffer (flushed after
+     * avr_lock is released in chip_thread_fn) */
+    uart_server_push_tx(idx, b);
 }
 
 typedef struct {
@@ -251,6 +340,10 @@ static void wire_pwm_outputs(chip_t *c)
 
 /* ----- MCP2515 <-> simavr glue ---------------------------------------- */
 
+/* simavr fires SPI_IRQ_OUTPUT when the AVR writes SPDR (the byte the AVR
+ * is transmitting to the external slave).  We listen on OUTPUT, feed the
+ * byte through the MCP2515 model, then raise SPI_IRQ_INPUT with the
+ * response so simavr loads it into SPDR for the AVR to read. */
 static void on_mcp_spi_byte(struct avr_irq_t *irq, uint32_t value, void *param)
 {
     (void)irq;
@@ -261,10 +354,10 @@ static void on_mcp_spi_byte(struct avr_irq_t *irq, uint32_t value, void *param)
 
     uint8_t out = mcp2515_spi_byte(m, (uint8_t)(value & 0xFF));
 
-    avr_irq_t *spi_out = avr_io_getirq(c->avr,
-                                       AVR_IOCTL_SPI_GETIRQ('0'),
-                                       SPI_IRQ_OUTPUT);
-    if (spi_out) avr_raise_irq(spi_out, out);
+    avr_irq_t *spi_in = avr_io_getirq(c->avr,
+                                      AVR_IOCTL_SPI_GETIRQ(0),
+                                      SPI_IRQ_INPUT);
+    if (spi_in) avr_raise_irq(spi_in, out);
 }
 
 static void on_mcp_cs_change(struct avr_irq_t *irq, uint32_t value, void *param)
@@ -319,11 +412,14 @@ static void wire_mcp2515(int idx)
     m->ctx    = (void *)(intptr_t)idx;
     can_bus_attach(&g_can1, m);
 
-    avr_irq_t *spi_in = avr_io_getirq(c->avr,
-                                      AVR_IOCTL_SPI_GETIRQ('0'),
-                                      SPI_IRQ_INPUT);
-    if (spi_in) {
-        avr_irq_register_notify(spi_in, on_mcp_spi_byte,
+    /* Listen on OUTPUT (bytes the AVR is transmitting); the handler
+     * processes them through the MCP2515 model and raises INPUT with
+     * the response so simavr presents it back to the AVR via SPDR. */
+    avr_irq_t *spi_out = avr_io_getirq(c->avr,
+                                       AVR_IOCTL_SPI_GETIRQ(0),
+                                       SPI_IRQ_OUTPUT);
+    if (spi_out) {
+        avr_irq_register_notify(spi_out, on_mcp_spi_byte,
                                 (void *)(intptr_t)idx);
     }
 
@@ -461,6 +557,15 @@ static void wire_chip_irqs(chip_t *c)
         avr_irq_register_notify(uart_out, on_uart_byte, c);
     }
 
+    /* Cache the UART input IRQ so chip_thread_fn can deliver TCP RX bytes
+     * without calling avr_io_getirq (which walks a linked list) per byte. */
+    int cidx = (int)(c - g_chips);
+    if (cidx >= 0 && cidx < SIM_MAX_CHIPS) {
+        g_uart_rx_irq[cidx] = avr_io_getirq(c->avr,
+                                             AVR_IOCTL_UART_GETIRQ('0'),
+                                             UART_IRQ_INPUT);
+    }
+
     wire_pwm_outputs(c);
 }
 
@@ -498,6 +603,12 @@ int sim_loop_init(void)
     for (int i = 0; i < 4; i++) wire_mcp2515(i);
     for (int i = 0; i < 4; i++) wire_lcd(i);
 
+    if (uart_server_init(g_nchips) != 0) {
+        proto_emit_log("warn",
+                       "uart_server_init failed — TCP UART ports unavailable");
+        /* non-fatal: simulation continues without TCP UART */
+    }
+
     proto_emit_log("info",
                    "sim_loop: initialized %d chips, 4 mcp2515, 4 lcd, bus '%s'",
                    g_nchips, g_can1.name);
@@ -506,6 +617,10 @@ int sim_loop_init(void)
 
 int sim_loop_start(void)
 {
+    if (uart_server_start() != 0) {
+        proto_emit_log("warn", "uart_server_start failed — TCP UART unavailable");
+    }
+
     for (int i = 0; i < g_nchips; i++) {
         if (pthread_create(&g_chip_threads[i], NULL, chip_thread_fn,
                            (void *)(intptr_t)i) != 0) {
@@ -573,6 +688,7 @@ bool sim_loop_should_stop(void)  { return atomic_load(&g_stop_req); }
 void sim_loop_shutdown(void)
 {
     atomic_store(&g_stop_req, true);
+    uart_server_shutdown();
     for (int i = 0; i < g_nchips; i++) pthread_join(g_chip_threads[i], NULL);
     for (int i = 0; i < 4; i++) pthread_mutex_destroy(&g_can_rx[i].lock);
     for (int i = 0; i < g_nchips; i++) chip_free(&g_chips[i]);

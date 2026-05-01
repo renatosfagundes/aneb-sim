@@ -2,20 +2,29 @@
 // QtQuick.Layouts so children shrink gracefully when the window
 // resizes and never overflow the panel.
 //
-// Layout from top to bottom:
-//   - Title row : ECU label + Console toggle + CAN status indicator
-//   - Nano      : the board illustration
-//   - Hardware  : LCD on the left, buzzer on the right
-//   - I/O row   : 2x2 LEDs + 4 trimpots + 2x2 buttons
+// Layout:
+//
+//   ┌───────────────────────────────────────────────────────┐
+//   │ ECU 1 │ Console │ Plot │ Flash │ Eject                │  title row
+//   ├──────────┬──────────────────────────────┬────────────┤
+//   │ ● CAN    │                              │   DIN1     │
+//   │  active  │   [ Arduino Nano image ]     │   DIN3     │  main row
+//   │ Hex: …   │                              │   DIN2     │
+//   │ RAM: …   │   [ 16x2 LCD ]               │   DIN4     │
+//   │ COM: …   │                              │            │
+//   ├──────────┴──────────────────────────────┴────────────┤
+//   │ DOUT0 DOUT1   AIN0 AIN1 AIN2 AIN3   BUZZ              │  bottom row
+//   │   L   LDR                                             │
+//   └───────────────────────────────────────────────────────┘
 //
 // Every interactive widget's preferred size is scaled by `_s`, a
-// panel-relative scale factor, so the whole panel content shrinks or
-// grows uniformly with the available slot. Nothing is fixed in
-// absolute pixels — at the minimum window the controls compress
-// proportionally instead of clipping off the bottom.
+// panel-relative scale factor. The Nano image uses Layout.fillHeight
+// so it absorbs leftover vertical space, growing on big panels and
+// giving way on tight ones (instead of clipping the bottom row).
 //
-// The serial console is a separate top-level window per chip — a
-// "Console" toggle button in the title row pops it up.
+// The serial console, plotter, and avrdude output are separate
+// top-level windows per chip — toggle buttons in the title row pop
+// them up.
 import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
@@ -27,15 +36,15 @@ Item {
 
     implicitWidth:  720
     implicitHeight: 360
-    Layout.minimumWidth:  240
-    Layout.minimumHeight: 200
+    Layout.minimumWidth:  220
+    Layout.minimumHeight: 220
 
     // Scale factor — 1.0 at the "comfortable" reference size of
-    // 600x320, 0.5 at the floor (so the smallest widgets still render
-    // with usable shapes), and up to 1.4 when the panel grows. Driven
+    // 600x320, 0.4 at the floor (so the smallest widgets still render
+    // with usable shapes), and up to 1.8 when the panel grows.  Driven
     // by whichever dimension is more constrained, so a tall narrow
     // panel doesn't make the controls overflow horizontally.
-    readonly property real _s: Math.max(0.5, Math.min(width / 600, height / 320, 1.4))
+    readonly property real _s: Math.max(0.4, Math.min(width / 600, height / 320, 1.8))
 
     Rectangle {
         anchors.fill: parent
@@ -48,13 +57,13 @@ Item {
     ColumnLayout {
         anchors.fill: parent
         anchors.margins: 8 * root._s
-        spacing: 4 * root._s
+        spacing: 6 * root._s
 
-        // ---- Title row: label + Console toggle + CAN status --------
-        RowLayout {
+        // ---- Title row: label + window toggles --------------------
+        Flow {
             Layout.fillWidth: true
-            Layout.preferredHeight: 22 * root._s
-            spacing: 10 * root._s
+            Layout.preferredHeight: childrenRect.height
+            spacing: 8 * root._s
 
             Text {
                 text: root.label
@@ -62,32 +71,40 @@ Item {
                 font.family: "Consolas"
                 font.pixelSize: 14 * root._s
                 font.bold: true
-                Layout.preferredWidth: 60 * root._s
             }
             Button {
                 text: consoleWindow.visible ? "Console ▾" : "Console ▸"
-                Layout.preferredHeight: 22 * root._s
-                font.pixelSize: 10 * root._s
+                font.pixelSize: 11 * root._s
                 onClicked: consoleWindow.visible = !consoleWindow.visible
             }
             Button {
                 text: plotterWindow.visible ? "Plot ▾" : "Plot ▸"
-                Layout.preferredHeight: 22 * root._s
-                font.pixelSize: 10 * root._s
+                font.pixelSize: 11 * root._s
                 onClicked: plotterWindow.visible = !plotterWindow.visible
             }
             Button {
+                id: flashBtn
+                property bool _busy: false
+                text: _busy ? "Flashing…" : (avrdudeWindow.visible ? "Flash ▾" : "Flash ▸")
+                font.pixelSize: 11 * root._s
+                enabled: !_busy
+                palette.buttonText: _busy ? "#ffcc00" : "#44ddff"
+                onClicked: {
+                    if (!avrdudeWindow.visible) avrdudeWindow.visible = true
+                    if (bridge) bridge.flashChipAvrdude(root.chip)
+                }
+                Connections {
+                    target: bridge
+                    function onAvrdudeStateChanged(chip, running) {
+                        if (chip === root.chip) flashBtn._busy = running
+                    }
+                }
+            }
+            Button {
                 text: "Eject"
-                Layout.preferredHeight: 22 * root._s
-                font.pixelSize: 10 * root._s
+                font.pixelSize: 11 * root._s
                 palette.buttonText: "#ff6655"
                 onClicked: { if (bridge) bridge.unloadChip(root.chip) }
-            }
-            Item { Layout.fillWidth: true }   // expanding spacer
-            CanIndicator {
-                chip: root.chip
-                Layout.preferredWidth:  200 * root._s
-                Layout.preferredHeight: 22  * root._s
             }
         }
 
@@ -101,71 +118,177 @@ Item {
             chip:  root.chip
             label: root.label
         }
-
-        // ---- Nano illustration -------------------------------------
-        // Height is driven by width via the image's 1500x571 aspect
-        // ratio, so the Nano fills the panel horizontally without
-        // letterboxing.
-        ArduinoNano {
-            id: nano
-            chip: root.chip
-            power: bridge && bridge.engineRunning
-            Layout.fillWidth: true
-            Layout.preferredHeight: Math.min(width / (1500.0 / 571.0), 100)
-            Layout.minimumHeight: 40
-            Layout.maximumHeight: 110
+        AvrdudeWindow {
+            id: avrdudeWindow
+            chip:  root.chip
+            label: root.label
         }
 
-        Connections {
-            target: bridge
-            function onUartAppended(chip, data) {
-                if (chip === root.chip) nano.pulseTx()
-            }
-            function onUartSent(chip) {
-                if (chip === root.chip) nano.pulseRx()
-            }
-        }
-
-        // ---- Hardware row: LCD + Buzzer (centered as a group) ------
-        // LCD height tracks ~1/6 of its width with min/max bounds, so
-        // a wider LCD gets proportionally taller (matching the look
-        // of a real 1602 module) instead of staying as a thin strip.
+        // ---- Main row: info | Nano+LCD | DIN buttons --------------
         RowLayout {
             Layout.fillWidth: true
-            Layout.preferredHeight: lcd.Layout.preferredHeight + 4
+            Layout.fillHeight: true
             spacing: 8 * root._s
 
-            Item { Layout.fillWidth: true }
-            LcdWidget {
-                id: lcd
-                chip: root.chip
-                Layout.preferredWidth:  Math.max(160, root.width * 0.7)
-                Layout.preferredHeight: Math.max(46, Math.min(Layout.preferredWidth / 6, 90))
+            // ---- Info sidebar ----------------------------------
+            // CAN status + per-chip data points (firmware, RAM, COM).
+            // The Hex/RAM placeholders are not yet wired to engine
+            // state — they show "—" until the bridge exposes the
+            // values; the COM line reflects the live bridge mapping.
+            ColumnLayout {
+                Layout.preferredWidth: Math.max(110, 130 * root._s)
+                Layout.minimumWidth: 100
+                Layout.fillHeight: true
+                spacing: 6 * root._s
+
+                CanIndicator {
+                    chip: root.chip
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 38
+                }
+
+                Text {
+                    text: "Hex: —"
+                    color: "#cdfac0"
+                    font.family: "Consolas"
+                    font.pixelSize: 11 * root._s
+                }
+                Text {
+                    text: "RAM free: —"
+                    color: "#cdfac0"
+                    font.family: "Consolas"
+                    font.pixelSize: 11 * root._s
+                }
+                Text {
+                    text: {
+                        if (!bridge || !bridge.userComPorts) return "COM: —"
+                        var p = bridge.userComPorts[root.chip]
+                        return p ? "COM: " + p : "COM: —"
+                    }
+                    color: "#cdfac0"
+                    font.family: "Consolas"
+                    font.pixelSize: 11 * root._s
+                }
+
+                Item { Layout.fillHeight: true }   // push entries to top
             }
-            BuzzerWidget {
-                chip: root.chip
-                Layout.preferredWidth:  lcd.Layout.preferredHeight
-                Layout.preferredHeight: lcd.Layout.preferredHeight
+
+            // ---- Center: Nano illustration + LCD ---------------
+            ColumnLayout {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                spacing: 6 * root._s
+
+                ArduinoNano {
+                    id: nano
+                    chip: root.chip
+                    power: bridge && bridge.engineRunning
+                    // fillHeight lets the Nano absorb any vertical space
+                    // left over after LCD takes its preferred height.
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    Layout.preferredHeight: Math.min(width / (1500.0 / 571.0), 140)
+                    Layout.minimumHeight: 40
+                    Layout.maximumHeight: 200
+                }
+
+                Connections {
+                    target: bridge
+                    function onUartAppended(chip, data) {
+                        if (chip === root.chip) nano.pulseTx()
+                    }
+                    function onUartSent(chip) {
+                        if (chip === root.chip) nano.pulseRx()
+                    }
+                }
+
+                LcdWidget {
+                    id: lcd
+                    chip: root.chip
+                    fontScale: root._s
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: Math.max(36, Math.min(width / 6, 72))
+                }
             }
-            Item { Layout.fillWidth: true }
+
+            // ---- Right: DIN buttons stacked ---------------------
+            // Buttons keep their natural (collar + 2-line label) size;
+            // a single fillHeight spacer at the bottom absorbs any
+            // surplus column height so the buttons cluster at the top
+            // without crushing each other's labels.
+            ColumnLayout {
+                Layout.preferredWidth: 50 * root._s
+                Layout.minimumWidth: 44 * root._s
+                Layout.fillHeight: true
+                spacing: 6 * root._s
+
+                PushButton {
+                    chip: root.chip; pin: "A4"; label: "DIN1  A4"
+                    color: "#e04a4a"
+                    fontScale: root._s
+                    Layout.alignment: Qt.AlignHCenter
+                    Layout.preferredWidth:  44 * root._s
+                    Layout.preferredHeight: 56 * root._s
+                    Layout.minimumHeight:   38 * root._s
+                }
+                PushButton {
+                    chip: root.chip; pin: "D9"; label: "DIN3  D9"
+                    color: "#3ec85a"
+                    fontScale: root._s
+                    Layout.alignment: Qt.AlignHCenter
+                    Layout.preferredWidth:  44 * root._s
+                    Layout.preferredHeight: 56 * root._s
+                    Layout.minimumHeight:   38 * root._s
+                }
+                PushButton {
+                    chip: root.chip; pin: "A5"; label: "DIN2  A5"
+                    color: "#e8c440"
+                    fontScale: root._s
+                    Layout.alignment: Qt.AlignHCenter
+                    Layout.preferredWidth:  44 * root._s
+                    Layout.preferredHeight: 56 * root._s
+                    Layout.minimumHeight:   38 * root._s
+                }
+                PushButton {
+                    chip: root.chip; pin: "D8"; label: "DIN4  D8"
+                    color: "#3a8fe8"
+                    fontScale: root._s
+                    Layout.alignment: Qt.AlignHCenter
+                    Layout.preferredWidth:  44 * root._s
+                    Layout.preferredHeight: 56 * root._s
+                    Layout.minimumHeight:   38 * root._s
+                }
+                Item { Layout.fillHeight: true }
+            }
         }
 
-        // ---- I/O row: LEDs + Pots + Buttons (clustered, centered) --
-        // Two outer fillWidth spacers center the whole I/O cluster
-        // and the inner row spacing (28*_s) gives the LEDs and
-        // buttons some visible breathing room from the trimpots.
+        // ---- Bottom row: LEDs + AIN trimpots + Buzzer -------------
+        // Four fillWidth spacers (one before LEDs, one between LEDs and
+        // pots, one between pots and buzzer, one after buzzer) split
+        // available whitespace into four equal gaps — so the LEDs sit
+        // exactly halfway between the panel's left margin and the
+        // trimpot row, and the buzzer sits halfway between the trimpot
+        // row and the right margin.  minimumHeight forces the row to
+        // keep its full vertical space even when the panel is tight,
+        // so the trimpot body + value + label stack never gets clipped.
         RowLayout {
             Layout.fillWidth: true
-            Layout.preferredHeight: 116 * root._s
-            spacing: 28 * root._s
+            Layout.preferredHeight: 120 * root._s
+            // Lower minimum than preferred so the row CAN shrink when
+            // the panel is tight (e.g. minimum window with title row
+            // wrapped to 2 lines) — avoids forcing the row to claim
+            // space the panel doesn't have, which was pushing the
+            // bottom-row content past the panel's bottom border.
+            Layout.minimumHeight:   80 * root._s
+            spacing: 0
 
-            Item { Layout.fillWidth: true }   // outer left spacer
+            Item { Layout.fillWidth: true }   // gap: margin → LEDs
 
             // 2x2 LED grid: DOUT0 amber, DOUT1 green, L red, LDR blue.
             GridLayout {
                 columns: 2
                 rowSpacing: 6 * root._s
-                columnSpacing: 8 * root._s
+                columnSpacing: 10 * root._s
                 Layout.alignment: Qt.AlignVCenter
 
                 ColumnLayout {
@@ -182,7 +305,7 @@ Item {
                     Text {
                         Layout.alignment: Qt.AlignHCenter
                         text: "DOUT0"; color: "#a8d0b0"
-                        font.family: "Consolas"; font.pixelSize: 7 * root._s
+                        font.family: "Consolas"; font.pixelSize: 10 * root._s
                     }
                 }
                 ColumnLayout {
@@ -198,7 +321,7 @@ Item {
                     Text {
                         Layout.alignment: Qt.AlignHCenter
                         text: "DOUT1"; color: "#a8d0b0"
-                        font.family: "Consolas"; font.pixelSize: 7 * root._s
+                        font.family: "Consolas"; font.pixelSize: 10 * root._s
                     }
                 }
                 ColumnLayout {
@@ -214,7 +337,7 @@ Item {
                     Text {
                         Layout.alignment: Qt.AlignHCenter
                         text: "L"; color: "#a8d0b0"
-                        font.family: "Consolas"; font.pixelSize: 7 * root._s
+                        font.family: "Consolas"; font.pixelSize: 10 * root._s
                     }
                 }
                 ColumnLayout {
@@ -230,64 +353,47 @@ Item {
                     Text {
                         Layout.alignment: Qt.AlignHCenter
                         text: "LDR"; color: "#a8d0b0"
-                        font.family: "Consolas"; font.pixelSize: 7 * root._s
+                        font.family: "Consolas"; font.pixelSize: 10 * root._s
                     }
                 }
             }
 
-            // Pots row, scaled 40% larger than the original 40x60 so
-            // the brass-cap arrow is clearly readable.
+            Item { Layout.fillWidth: true }   // gap: LEDs → pots
+
+            // Trimpots row (4 channels, AIN0–AIN3).
             RowLayout {
-                spacing: 6 * root._s
+                spacing: 8 * root._s
                 Layout.alignment: Qt.AlignVCenter
+
                 TrimPot { chip: root.chip; channel: 0; label: "AIN0  A0"
+                          fontScale: root._s
                           Layout.preferredWidth:  48 * root._s
-                          Layout.preferredHeight: 72 * root._s }
+                          Layout.preferredHeight: 84 * root._s }
                 TrimPot { chip: root.chip; channel: 1; label: "AIN1  A1"
+                          fontScale: root._s
                           Layout.preferredWidth:  48 * root._s
-                          Layout.preferredHeight: 72 * root._s }
+                          Layout.preferredHeight: 84 * root._s }
                 TrimPot { chip: root.chip; channel: 2; label: "AIN2  A2"
+                          fontScale: root._s
                           Layout.preferredWidth:  48 * root._s
-                          Layout.preferredHeight: 72 * root._s }
+                          Layout.preferredHeight: 84 * root._s }
                 TrimPot { chip: root.chip; channel: 3; label: "AIN3  A3"
+                          fontScale: root._s
                           Layout.preferredWidth:  48 * root._s
-                          Layout.preferredHeight: 72 * root._s }
+                          Layout.preferredHeight: 84 * root._s }
             }
 
-            // 2x2 button grid.
-            GridLayout {
-                columns: 2
-                rowSpacing: 4 * root._s
-                columnSpacing: 6 * root._s
+            Item { Layout.fillWidth: true }   // gap: pots → buzzer
+
+            BuzzerWidget {
+                chip: root.chip
+                fontScale: root._s
                 Layout.alignment: Qt.AlignVCenter
-
-                PushButton {
-                    chip: root.chip; pin: "A4"; label: "DIN1  A4"
-                    color: "#e04a4a"
-                    Layout.preferredWidth:  42 * root._s
-                    Layout.preferredHeight: 56 * root._s
-                }
-                PushButton {
-                    chip: root.chip; pin: "A5"; label: "DIN2  A5"
-                    color: "#e8c440"
-                    Layout.preferredWidth:  42 * root._s
-                    Layout.preferredHeight: 56 * root._s
-                }
-                PushButton {
-                    chip: root.chip; pin: "D9"; label: "DIN3  D9"
-                    color: "#3ec85a"
-                    Layout.preferredWidth:  42 * root._s
-                    Layout.preferredHeight: 56 * root._s
-                }
-                PushButton {
-                    chip: root.chip; pin: "D8"; label: "DIN4  D8"
-                    color: "#3a8fe8"
-                    Layout.preferredWidth:  42 * root._s
-                    Layout.preferredHeight: 56 * root._s
-                }
+                Layout.preferredWidth:  56 * root._s
+                Layout.preferredHeight: 56 * root._s
             }
 
-            Item { Layout.fillWidth: true }   // outer right spacer
+            Item { Layout.fillWidth: true }   // gap: buzzer → margin
         }
     }
 }

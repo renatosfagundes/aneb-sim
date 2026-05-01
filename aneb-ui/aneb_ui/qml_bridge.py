@@ -38,6 +38,9 @@ from __future__ import annotations
 
 import json
 import logging
+import shutil
+import subprocess
+import threading
 from pathlib import Path
 
 from PyQt6.QtCore    import (QObject, QPointF, QTimer, pyqtProperty,
@@ -47,6 +50,7 @@ from PyQt6.QtWidgets import QFileDialog
 from .plot_buffers import PlotBuffers, Signal as PlotSignal
 from .sim_proxy    import SimProxy
 from .state        import SimState
+from .uart_bridge  import UartBridgeManager
 
 
 log = logging.getLogger(__name__)
@@ -111,14 +115,34 @@ class QmlBridge(QObject):
     uartAppended = pyqtSignal(str, str)   # chip, data — engine -> UI
     uartSent     = pyqtSignal(str)        # chip      — UI -> engine
 
+    # avrdude flashing progress (emitted from background thread — Qt queues
+    # across thread boundary automatically with AutoConnection).
+    avrdudeOutput       = pyqtSignal(str, str)   # chip, line
+    avrdudeStateChanged = pyqtSignal(str, bool)  # chip, is_running
+
+    # Fires whenever the set of active virtual-COM bridges changes.
+    uartBridgeChanged   = pyqtSignal()
+
     def __init__(self, state: SimState, proxy: SimProxy,
                  parent: QObject | None = None) -> None:
         super().__init__(parent)
         self._state = state
         self._proxy = proxy
         self._engine_running = False
-        self._speed = 0.0
+        self._speed = 1.0
         self._nano_coords = _load_nano_coords()
+        self._avrdude_path: str | None = None
+        self._avrdude_threads: dict[str, threading.Thread] = {}
+
+        # Virtual-COM bridges: each chip's TCP UART socket forwards bytes
+        # in both directions to a com0com pair so external tools (Arduino
+        # Serial Monitor / PuTTY) can see the chip as a normal COM port.
+        # The bridge owns COM10/12/14/16/18; the user's tool opens
+        # COM11/13/15/17/19. Bridges silently fail to start if com0com
+        # isn't installed — TCP path keeps working regardless.
+        # Run scripts/setup_com.bat once to create the pairs.
+        self._uart_bridges = UartBridgeManager()
+        self._start_uart_bridges()
 
         # Per-chip 16x2 LCD state — sourced from `lcd` events emitted
         # by the engine's I2C peripheral decoder. The engine sends a
@@ -391,3 +415,236 @@ class QmlBridge(QObject):
     @pyqtProperty(float, notify=speedChanged)
     def speed(self) -> float:
         return self._speed
+
+    # ---- avrdude flashing -------------------------------------------
+
+    _CHIP_MCU = {
+        "ecu1": "atmega328p", "ecu2": "atmega328p",
+        "ecu3": "atmega328p", "ecu4": "atmega328p",
+        "mcu":  "atmega328pb",
+    }
+    _CHIP_TCP_PORT = {
+        "ecu1": 8600, "ecu2": 8601, "ecu3": 8602, "ecu4": 8603, "mcu": 8604,
+    }
+    # Pairs created by scripts/setup_com.bat.  Bridge holds the first port,
+    # user's tool opens the second.  Edit both this dict and setup_com.bat
+    # if you want a different pair layout.
+    _CHIP_COM_BRIDGE = {
+        "ecu1": "COM10", "ecu2": "COM12", "ecu3": "COM14",
+        "ecu4": "COM16", "mcu":  "COM18",
+    }
+    _CHIP_COM_USER = {
+        "ecu1": "COM11", "ecu2": "COM13", "ecu3": "COM15",
+        "ecu4": "COM17", "mcu":  "COM19",
+    }
+    _AVRDUDE_SEARCH = [
+        r"C:\Program Files (x86)\Arduino\hardware\tools\avr\bin\avrdude.exe",
+        r"C:\Program Files\Arduino\hardware\tools\avr\bin\avrdude.exe",
+        r"C:\msys64\mingw64\bin\avrdude.exe",
+        r"C:\msys64\usr\bin\avrdude.exe",
+    ]
+    # Optiboot for ATmega328P — bundled in Arduino IDE.
+    # avrdude -c arduino requires Optiboot in the chip's flash (bootloader section).
+    _OPTIBOOT_SEARCH = [
+        r"C:\Program Files (x86)\Arduino\hardware\arduino\avr\bootloaders\optiboot\optiboot_atmega328.hex",
+        r"C:\Program Files\Arduino\hardware\arduino\avr\bootloaders\optiboot\optiboot_atmega328.hex",
+    ]
+
+    def _find_avrdude(self) -> str | None:
+        if self._avrdude_path and Path(self._avrdude_path).exists():
+            return self._avrdude_path
+        found = shutil.which("avrdude") or shutil.which("avrdude.exe")
+        if found:
+            self._avrdude_path = found
+            return found
+        for p in self._AVRDUDE_SEARCH:
+            if Path(p).exists():
+                self._avrdude_path = p
+                return p
+        return None
+
+    def _find_optiboot(self) -> str | None:
+        for p in self._OPTIBOOT_SEARCH:
+            if Path(p).exists():
+                return p
+        return None
+
+    @staticmethod
+    def _find_avrdude_conf(avrdude_exe: str) -> str | None:
+        """Return the avrdude.conf path bundled next to the executable, or None."""
+        exe = Path(avrdude_exe)
+        candidates = [
+            exe.parent.parent / "etc" / "avrdude.conf",   # Arduino layout: bin/../etc/
+            exe.parent / "avrdude.conf",                   # flat layout
+        ]
+        for c in candidates:
+            if c.exists():
+                return str(c)
+        return None
+
+    @pyqtSlot(str)
+    def flashChipAvrdude(self, chip: str) -> None:
+        """Open a file dialog and flash the chip via avrdude over TCP."""
+        t = self._avrdude_threads.get(chip)
+        if t and t.is_alive():
+            self.avrdudeOutput.emit(chip, "⚠ avrdude already running for this chip")
+            return
+
+        avrdude = self._find_avrdude()
+        if not avrdude:
+            self.avrdudeOutput.emit(chip,
+                "ERROR: avrdude not found.\n"
+                "Install Arduino IDE, or add avrdude to PATH, or place it in\n"
+                "  C:\\Program Files (x86)\\Arduino\\hardware\\tools\\avr\\bin\\")
+            self.avrdudeStateChanged.emit(chip, False)
+            return
+
+        hex_path, _ = QFileDialog.getOpenFileName(
+            None, f"Flash {chip.upper()} via avrdude",
+            "", "Intel hex (*.hex);;All files (*.*)"
+        )
+        if not hex_path:
+            return
+
+        # avrdude -c arduino speaks STK500 to Optiboot — Optiboot must be
+        # in the chip's flash.  Load it now so the chip is running a
+        # bootloader when avrdude's TCP connect triggers the reset.
+        optiboot = self._find_optiboot()
+        if not optiboot:
+            self.avrdudeOutput.emit(chip,
+                "ERROR: optiboot_atmega328.hex not found.\n"
+                "Expected in Arduino IDE at:\n"
+                "  hardware\\arduino\\avr\\bootloaders\\optiboot\\")
+            self.avrdudeStateChanged.emit(chip, False)
+            return
+
+        self.avrdudeOutput.emit(chip, f"INFO: loading Optiboot → {optiboot}")
+        self._proxy.cmd_load(chip, optiboot)
+
+        # Bootloader timing requires real-time — force it silently.
+        if self._speed != 1.0:
+            self.setSpeed(1.0)
+            self.avrdudeOutput.emit(chip, "INFO: speed set to 1.0× (required for bootloader)")
+
+        mcu      = self._CHIP_MCU.get(chip, "atmega328p")
+        tcp_port = self._CHIP_TCP_PORT.get(chip, 8600)
+
+        conf = self._find_avrdude_conf(avrdude)
+        cmd = [avrdude]
+        if conf:
+            cmd += ["-C", conf]
+        cmd += [
+            "-c", "arduino",
+            "-p", mcu,
+            "-b", "115200",
+            "-P", f"net:localhost:{tcp_port}",
+            "-U", f"flash:w:{hex_path}:i",
+        ]
+        self.avrdudeOutput.emit(chip, "$ " + " ".join(cmd))
+        self.avrdudeStateChanged.emit(chip, True)
+
+        # Free the TCP UART socket so avrdude can grab it.  The bridge
+        # holds a persistent connection from app launch, otherwise
+        # avrdude's connect would be refused. Resume after avrdude exits.
+        bridge_was_active = self._pause_bridge(chip)
+        if bridge_was_active:
+            self.avrdudeOutput.emit(chip,
+                f"INFO: paused {self._CHIP_COM_USER[chip]} bridge")
+
+        t = threading.Thread(
+            target=self._run_avrdude, args=(chip, cmd, bridge_was_active),
+            daemon=True, name=f"avrdude-{chip}"
+        )
+        self._avrdude_threads[chip] = t
+        t.start()
+
+    def _run_avrdude(self, chip: str, cmd: list, restore_bridge: bool) -> None:
+        try:
+            proc = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                text=True, bufsize=1,
+            )
+            for line in proc.stdout:
+                self.avrdudeOutput.emit(chip, line.rstrip())
+            proc.wait()
+            ok = proc.returncode == 0
+            self.avrdudeOutput.emit(
+                chip,
+                ("✓ Flash successful" if ok
+                 else f"✗ avrdude failed (exit {proc.returncode})")
+            )
+        except Exception as exc:
+            self.avrdudeOutput.emit(chip, f"ERROR: {exc}")
+        finally:
+            self.avrdudeStateChanged.emit(chip, False)
+            if restore_bridge:
+                self._resume_bridge(chip)
+                self.avrdudeOutput.emit(chip,
+                    f"INFO: resumed {self._CHIP_COM_USER[chip]} bridge")
+
+    @pyqtProperty("QVariantMap", constant=True)
+    def uartPorts(self) -> dict:
+        """TCP port numbers for each chip's raw UART socket.
+        Connect with: avrdude -c arduino -P net:localhost:<port>
+        or open with any TCP terminal (e.g. PuTTY raw mode).
+        The chip resets automatically when a client connects (Optiboot DTR emulation).
+        For virtual COM ports install com0com and run uart_bridge.py."""
+        return {
+            "ecu1": 8600,
+            "ecu2": 8601,
+            "ecu3": 8602,
+            "ecu4": 8603,
+            "mcu":  8604,
+        }
+
+    @pyqtProperty("QVariantMap", notify=uartBridgeChanged)
+    def userComPorts(self) -> dict:
+        """User-facing COM port for each chip (the side the user's tool opens).
+        Empty for any chip whose bridge failed to start (com0com not installed,
+        port already taken, etc.). 115200 baud."""
+        active = self._uart_bridges.active   # {chip: bridge_com}
+        return {
+            chip: self._CHIP_COM_USER[chip]
+            for chip in self._CHIP_COM_USER
+            if chip in active
+        }
+
+    # ---- UART bridge management -------------------------------------
+
+    def _start_uart_bridges(self) -> None:
+        """Try to start all chip→COM bridges.  Fails silently per chip
+        if com0com isn't installed or the port is taken."""
+        results = self._uart_bridges.start(dict(self._CHIP_COM_BRIDGE))
+        active = [c for c, ok in results.items() if ok]
+        failed = [c for c, ok in results.items() if not ok]
+        if active:
+            log.info("UART bridges active: %s", ", ".join(
+                f"{c}→{self._CHIP_COM_USER[c]}" for c in active))
+        if failed:
+            log.info("UART bridges unavailable for: %s "
+                     "(install com0com and run scripts/setup_com.bat)",
+                     ", ".join(failed))
+        self.uartBridgeChanged.emit()
+
+    def stop_uart_bridges(self) -> None:
+        """Tear down all bridges.  Called from app_qml.closeEvent."""
+        self._uart_bridges.stop()
+
+    def _pause_bridge(self, chip: str) -> bool:
+        """Disconnect this chip's bridge so avrdude can grab the TCP port.
+        Returns True if there was an active bridge to pause."""
+        was_active = chip in self._uart_bridges.active
+        if was_active:
+            self._uart_bridges.stop_chip(chip)
+            self.uartBridgeChanged.emit()
+        return was_active
+
+    def _resume_bridge(self, chip: str) -> None:
+        """Reattach this chip's bridge after avrdude is done."""
+        com = self._CHIP_COM_BRIDGE.get(chip)
+        if not com:
+            return
+        ok = self._uart_bridges.start_chip(chip, com)
+        if ok:
+            self.uartBridgeChanged.emit()
