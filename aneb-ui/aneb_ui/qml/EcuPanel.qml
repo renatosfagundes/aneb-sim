@@ -74,19 +74,19 @@ Item {
             }
             Button {
                 text: consoleWindow.visible ? "Console ▾" : "Console ▸"
-                font.pixelSize: 11 * root._s
+                font.pixelSize: Math.max(12, 14 * root._s)
                 onClicked: consoleWindow.visible = !consoleWindow.visible
             }
             Button {
                 text: plotterWindow.visible ? "Plot ▾" : "Plot ▸"
-                font.pixelSize: 11 * root._s
+                font.pixelSize: Math.max(12, 14 * root._s)
                 onClicked: plotterWindow.visible = !plotterWindow.visible
             }
             Button {
                 id: flashBtn
                 property bool _busy: false
                 text: _busy ? "Flashing…" : (avrdudeWindow.visible ? "Flash ▾" : "Flash ▸")
-                font.pixelSize: 11 * root._s
+                font.pixelSize: Math.max(12, 14 * root._s)
                 enabled: !_busy
                 palette.buttonText: _busy ? "#ffcc00" : "#44ddff"
                 onClicked: {
@@ -102,7 +102,7 @@ Item {
             }
             Button {
                 text: "Eject"
-                font.pixelSize: 11 * root._s
+                font.pixelSize: Math.max(12, 14 * root._s)
                 palette.buttonText: "#ff6655"
                 onClicked: { if (bridge) bridge.unloadChip(root.chip) }
             }
@@ -136,28 +136,113 @@ Item {
             // state — they show "—" until the bridge exposes the
             // values; the COM line reflects the live bridge mapping.
             ColumnLayout {
-                Layout.preferredWidth: Math.max(110, 130 * root._s)
+                id: sidebar
+                // Reserve more breathing room for the info column so
+                // "Hex: Optiboot (built-in)" doesn't elide to "(bu…".
+                // The Nano's max-width below caps the center column,
+                // letting the sidebar take what it needs.
+                Layout.preferredWidth: Math.max(130, 160 * root._s)
                 Layout.minimumWidth: 100
                 Layout.fillHeight: true
-                spacing: 6 * root._s
+                spacing: 5 * root._s
+
+                // The text font's only purpose at tiny sizes is to mark
+                // the line as present; let it shrink to 10 px before
+                // bottoming out so the column matches the panel's scale.
+                readonly property real _font: Math.max(10, 13 * root._s)
+
+                // Live chip metadata, refreshed each chipStatChanged tick.
+                // Properties live on the ColumnLayout (qualified through
+                // `sidebar.` from child bindings — child Text items can't
+                // resolve unqualified names against an unnamed parent).
+                property string hexName: "—"
+                property string hexPath: ""
+                property int    freeRam: -1
+                property int    ramSize: 0
+
+                function refreshStat() {
+                    if (!bridge || !bridge.chipStat) return
+                    var s = bridge.chipStat(root.chip)
+                    if (!s) return
+                    hexName = s.hex_name && s.hex_name.length ? s.hex_name : "—"
+                    hexPath = s.hex_path || ""
+                    freeRam = (s.free_ram !== undefined) ? s.free_ram : -1
+                    ramSize = s.ram_size || 0
+                }
 
                 CanIndicator {
+                    id: canBadge
                     chip: root.chip
                     Layout.fillWidth: true
-                    Layout.preferredHeight: 38
+                    Layout.preferredHeight: Math.max(34, 44 * root._s)
+
+                    ToolTip.visible: canHover.containsMouse
+                    ToolTip.delay: 400
+                    ToolTip.text:
+                        "CAN bus state for " + root.label + "\n" +
+                        "TEC = transmit error counter\n" +
+                        "REC = receive error counter\n" +
+                        "Bus state: active (≤95) → passive (≥128) → off (TEC≥256)"
+                    MouseArea {
+                        id: canHover
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        acceptedButtons: Qt.NoButton
+                    }
                 }
 
-                Text {
-                    text: "Hex: —"
-                    color: "#cdfac0"
-                    font.family: "Consolas"
-                    font.pixelSize: 11 * root._s
+                Connections {
+                    target: bridge
+                    function onChipStatChanged(chip) {
+                        if (chip === root.chip) sidebar.refreshStat()
+                    }
                 }
+                Component.onCompleted: sidebar.refreshStat()
+
+                // Hex name — truncated to fit; full path on hover.
                 Text {
-                    text: "RAM free: —"
+                    text: "Hex: " + sidebar.hexName
                     color: "#cdfac0"
                     font.family: "Consolas"
-                    font.pixelSize: 11 * root._s
+                    font.pixelSize: sidebar._font
+                    elide: Text.ElideRight
+                    Layout.fillWidth: true
+                    ToolTip.visible: hexHover.containsMouse && sidebar.hexName !== "—"
+                    ToolTip.delay: 400
+                    ToolTip.text: sidebar.hexPath.length > 0
+                                    ? sidebar.hexName + "\n" + sidebar.hexPath
+                                    : sidebar.hexName
+                    MouseArea {
+                        id: hexHover
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        acceptedButtons: Qt.NoButton
+                    }
+                }
+                // Free RAM — shown in bytes once the engine has emitted
+                // its first chipstat tick (so we don't print "0 B" before
+                // the chip is up).
+                Text {
+                    text: sidebar.freeRam < 0
+                            ? "Free RAM: —"
+                            : "Free RAM: " + sidebar.freeRam + " / " + sidebar.ramSize + " B"
+                    color: "#cdfac0"
+                    font.family: "Consolas"
+                    font.pixelSize: sidebar._font
+                    elide: Text.ElideRight
+                    Layout.fillWidth: true
+                    ToolTip.visible: ramHover.containsMouse && sidebar.freeRam >= 0
+                    ToolTip.delay: 400
+                    ToolTip.text:
+                        "Free SRAM = current SP − data start.\n" +
+                        "Approximates stack head-room: tight values mean\n" +
+                        "the sketch is close to overflowing into the heap."
+                    MouseArea {
+                        id: ramHover
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        acceptedButtons: Qt.NoButton
+                    }
                 }
                 Text {
                     text: {
@@ -167,7 +252,26 @@ Item {
                     }
                     color: "#cdfac0"
                     font.family: "Consolas"
-                    font.pixelSize: 11 * root._s
+                    font.pixelSize: sidebar._font
+                    Layout.fillWidth: true
+                    elide: Text.ElideRight
+                    ToolTip.visible: comHover.containsMouse
+                    ToolTip.delay: 400
+                    ToolTip.text: {
+                        if (!bridge || !bridge.userComPorts)
+                            return "COM port for this chip — bridge not running."
+                        var p = bridge.userComPorts[root.chip]
+                        return p
+                            ? "Open " + p + " in any serial tool to read this " +
+                              "chip's UART (115200 baud)."
+                            : "No COM mapping yet — bridge starting…"
+                    }
+                    MouseArea {
+                        id: comHover
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        acceptedButtons: Qt.NoButton
+                    }
                 }
 
                 Item { Layout.fillHeight: true }   // push entries to top
@@ -190,6 +294,11 @@ Item {
                     Layout.preferredHeight: Math.min(width / (1500.0 / 571.0), 140)
                     Layout.minimumHeight: 40
                     Layout.maximumHeight: 200
+                    // Cap the Nano's width so the info sidebar isn't
+                    // squeezed past the point where its lines elide on
+                    // medium-sized panels.  fillWidth still lets it use
+                    // any extra space below this cap.
+                    Layout.maximumWidth: Math.max(360, 480 * root._s)
                 }
 
                 Connections {

@@ -17,15 +17,17 @@ Item {
     implicitWidth: 24
     implicitHeight: 24
 
-    // Outer halo, visible when on. The size grows slightly with
-    // brightness so a fully-lit LED reads from across the panel.
+    // Outer halo, visible when on.  Kept tight (1.2x → 1.5x with
+    // brightness) so adjacent LEDs in a row don't bleed into each
+    // other — the previous 1.6x → 2.2x had ~30 % overlap on dense
+    // ECU rows like DOUT0/DOUT1/L/LDR.  Opacity tapered to match.
     Rectangle {
         anchors.centerIn: parent
-        width:  parent.width  * (1.6 + 0.6 * root.brightness)
-        height: parent.height * (1.6 + 0.6 * root.brightness)
+        width:  parent.width  * (1.2 + 0.3 * root.brightness)
+        height: parent.height * (1.2 + 0.3 * root.brightness)
         radius: width / 2
         color: root.onColor
-        opacity: root.brightness * 0.55
+        opacity: root.brightness * 0.45
         visible: root.brightness > 0.05
     }
 

@@ -37,6 +37,17 @@ void proto_emit_lcd      (const char *chip, const char *line0,
                           const char *line1, uint64_t ts);
 void proto_emit_log     (const char *level, const char *fmt, ...);
 
+/* Periodic chip-info snapshot for the UI sidebar.
+ *   hex_name : short label ("sketch.ino.hex" or "(via avrdude)")
+ *   hex_path : full path on disk, "" if not applicable
+ *   free_ram : approximate free SRAM in bytes (SP - data_start)
+ *   ram_size : total SRAM in bytes (e.g. 2048 for atmega328p)
+ *   sp       : current stack-pointer value (for diagnostics) */
+void proto_emit_chip_stats(const char *chip,
+                           const char *hex_name, const char *hex_path,
+                           int free_ram, int ram_size, int sp,
+                           uint64_t ts);
+
 /* ----- Command parsing (UI -> engine) ----------------------------------- */
 
 typedef enum {

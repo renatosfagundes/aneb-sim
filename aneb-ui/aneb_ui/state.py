@@ -30,12 +30,12 @@ class SimState(QObject):
     adc_changed       = pyqtSignal(str, int, int)        # chip, channel, val
     lcd_changed       = pyqtSignal(str, str, str)        # chip, line0, line1
     log_appended      = pyqtSignal(dict)
+    chip_stat_changed = pyqtSignal(str)                   # chip — read via chip_stat()
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
         self._pins:      dict[str, dict[str, int]]    = {c: {} for c in CHIPS}
         self._pwm:       dict[str, dict[str, float]]  = {c: {} for c in CHIPS}
-        self._uart_buf:  dict[str, str]               = {c: "" for c in CHIPS}
         self._can_log:   list[dict[str, Any]]         = []
         self._can_state: dict[str, dict[str, Any]]    = {
             c: {"tec": 0, "rec": 0, "state": "active"} for c in CHIPS
@@ -48,6 +48,13 @@ class SimState(QObject):
         # samples this snapshot at its tick rate.
         self._adc:       dict[str, dict[int, int]]    = {c: {} for c in CHIPS}
         self._log:       list[dict[str, Any]]         = []
+        # Per-chip metadata snapshot (hex name + free RAM).  Updated
+        # by chipstat events at ≈1 Hz; widgets read via chip_stat().
+        self._chip_stat: dict[str, dict[str, Any]]    = {
+            c: {"hex_name": "", "hex_path": "", "free_ram": 0,
+                "ram_size": 0,  "sp": 0}
+            for c in CHIPS
+        }
 
     # ---------- accessors --------------------------------------------
 
@@ -62,6 +69,9 @@ class SimState(QObject):
 
     def can_state(self, chip: str) -> dict[str, Any]:
         return dict(self._can_state.get(chip, {}))
+
+    def chip_stat(self, chip: str) -> dict[str, Any]:
+        return dict(self._chip_stat.get(chip, {}))
 
     # ---------- mutators (slots that SimProxy connects to) -----------
 
@@ -83,7 +93,11 @@ class SimState(QObject):
         chip = evt.get("chip"); data = evt.get("data", "")
         if chip is None:
             return
-        self._uart_buf[chip] = self._uart_buf.get(chip, "") + data
+        # No history retained here — consumers (SerialConsole, QML bridge)
+        # bound their own views.  An unbounded retained buffer is O(n²) on
+        # every append (str + str rebuilds the whole thing) and freezes
+        # the GUI thread within seconds when a Plotter sketch chats at
+        # full UART speed.
         self.uart_appended.emit(chip, data)
 
     def update_can_tx(self, evt: dict) -> None:
@@ -137,3 +151,18 @@ class SimState(QObject):
         if len(self._log) > 5000:
             self._log = self._log[-4000:]
         self.log_appended.emit(evt)
+
+    def update_chip_stat(self, evt: dict) -> None:
+        chip = evt.get("chip")
+        if not chip:
+            return
+        prev = self._chip_stat.get(chip, {})
+        new = {
+            "hex_name": str(evt.get("hex_name", prev.get("hex_name", ""))),
+            "hex_path": str(evt.get("hex_path", prev.get("hex_path", ""))),
+            "free_ram": int(evt.get("free_ram", prev.get("free_ram", 0))),
+            "ram_size": int(evt.get("ram_size", prev.get("ram_size", 0))),
+            "sp":       int(evt.get("sp",       prev.get("sp", 0))),
+        }
+        self._chip_stat[chip] = new
+        self.chip_stat_changed.emit(chip)

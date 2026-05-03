@@ -134,6 +134,7 @@ class MainWindow(QMainWindow):
         self._proxy.can_state_event .connect(self._state.update_can_state)
         self._proxy.lcd_event       .connect(self._state.update_lcd)
         self._proxy.log_event       .connect(self._state.update_log)
+        self._proxy.chip_stat_event .connect(self._state.update_chip_stat)
         self._proxy.parse_error     .connect(lambda m: log.warning("proto: %s", m))
         self._proxy.started         .connect(lambda: self._set_engine_status("running"))
         self._proxy.stopped         .connect(self._on_engine_stopped)

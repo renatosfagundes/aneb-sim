@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import shutil
 import subprocess
 import threading
@@ -123,6 +124,13 @@ class QmlBridge(QObject):
     # Fires whenever the set of active virtual-COM bridges changes.
     uartBridgeChanged   = pyqtSignal()
 
+    # Fires whenever the engine emits a chipstat update (≈1 Hz per chip).
+    # Carries the chip id; QML re-reads via chipStat() to get the new
+    # values.  We don't push the dict through the signal directly because
+    # QML's autoconvert wraps it in a QVariantMap each fire and that
+    # adds GC churn for a 5-chip × 1 Hz event stream.
+    chipStatChanged     = pyqtSignal(str)
+
     def __init__(self, state: SimState, proxy: SimProxy,
                  parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -141,8 +149,13 @@ class QmlBridge(QObject):
         # COM11/13/15/17/19. Bridges silently fail to start if com0com
         # isn't installed — TCP path keeps working regardless.
         # Run scripts/setup_com.bat once to create the pairs.
+        #
+        # The actual `_start_uart_bridges()` call is deferred until the
+        # engine subprocess has reported it's running (see
+        # _on_engine_started below) — otherwise the bridge tries to
+        # connect to localhost:8600..8604 before the engine has bound
+        # those ports and fails with "timed out" for every chip.
         self._uart_bridges = UartBridgeManager()
-        self._start_uart_bridges()
 
         # Per-chip 16x2 LCD state — sourced from `lcd` events emitted
         # by the engine's I2C peripheral decoder. The engine sends a
@@ -181,6 +194,7 @@ class QmlBridge(QObject):
         state.can_tx_appended.connect  (self._on_can_tx_appended)
         state.can_state_changed.connect(self._on_can_state_changed)
         state.lcd_changed.connect      (self._on_lcd_changed)
+        state.chip_stat_changed.connect(self.chipStatChanged.emit)
 
         # Track engine running state.
         proxy.started.connect(self._on_engine_started)
@@ -229,6 +243,12 @@ class QmlBridge(QObject):
     def _on_engine_started(self):
         self._engine_running = True
         self.engineRunningChanged.emit()
+        # The QProcess `started` signal fires the instant the child
+        # process exists — its TCP listeners (8600..8604) won't be
+        # bound for another few ms.  Defer bridge startup briefly so
+        # the bridge's connect doesn't race with bind() and fail with
+        # "timed out".
+        QTimer.singleShot(250, self._start_uart_bridges)
 
     def _on_engine_stopped(self, _exit_code: int):
         self._engine_running = False
@@ -285,6 +305,13 @@ class QmlBridge(QObject):
     @pyqtSlot(str, result="QVariantMap")
     def canStateOf(self, chip: str) -> dict:
         return dict(self._state.can_state(chip))
+
+    @pyqtSlot(str, result="QVariantMap")
+    def chipStat(self, chip: str) -> dict:
+        """Per-chip metadata snapshot consumed by the chip-info sidebar:
+        {hex_name, hex_path, free_ram, ram_size, sp}.  Updated at ~1 Hz
+        from the engine's chipstat events; QML re-reads on chipStatChanged."""
+        return dict(self._state.chip_stat(chip))
 
     @pyqtProperty("QVariantMap", notify=lcdLinesChanged)
     def lcdLines(self) -> dict:
@@ -630,6 +657,110 @@ class QmlBridge(QObject):
     def stop_uart_bridges(self) -> None:
         """Tear down all bridges.  Called from app_qml.closeEvent."""
         self._uart_bridges.stop()
+
+    # ---- COM port setup -----------------------------------------------
+
+    # True while scripts/setup_com.ps1 is running in a worker thread;
+    # gates the slot so back-to-back clicks can't spawn two installers.
+    _com_setup_running = False
+
+    @pyqtSlot()
+    def installComPorts(self) -> None:
+        """Run scripts/setup_com.ps1 to install/repair the com0com pairs.
+        Triggers a UAC prompt; the script self-elevates and creates the
+        five ECU pairs if they don't exist, then sets a friendly name on
+        each (ECU1 (aneb-sim), etc.).  Bridges are restarted automatically
+        once the script exits successfully.
+
+        Runs in a background thread so the QML UI thread stays
+        responsive while the user clicks through the UAC prompt and the
+        elevated PowerShell window does its work.
+        """
+        import sys
+        if sys.platform != "win32":
+            log.warning("COM port setup is Windows-only")
+            return
+        if self._com_setup_running:
+            log.info("COM port setup already in progress")
+            return
+
+        ps1 = Path(__file__).resolve().parents[2] / "scripts" / "setup_com.ps1"
+        if not ps1.exists():
+            log.error("setup_com.ps1 not found at %s", ps1)
+            return
+
+        self._com_setup_running = True
+        threading.Thread(
+            target=self._run_com_setup, args=(ps1,),
+            daemon=True, name="com-port-setup"
+        ).start()
+
+    @pyqtSlot()
+    def removeComPorts(self) -> None:
+        """Run scripts/setup_com.ps1 -Remove to delete the aneb-sim
+        com0com pairs (COM10..COM19).  Active bridges are stopped first
+        so pyserial isn't holding the COM ports open when setupc tries
+        to remove them.  Triggers a UAC prompt; the script self-elevates."""
+        import sys
+        if sys.platform != "win32":
+            log.warning("COM port removal is Windows-only")
+            return
+        if self._com_setup_running:
+            log.info("COM port operation already in progress")
+            return
+
+        ps1 = Path(__file__).resolve().parents[2] / "scripts" / "setup_com.ps1"
+        if not ps1.exists():
+            log.error("setup_com.ps1 not found at %s", ps1)
+            return
+
+        # Release the COM ports BEFORE running the remove script —
+        # setupc can't delete a port whose handle is still open.
+        log.info("stopping bridges before removing pairs")
+        self._uart_bridges.stop()
+        self.uartBridgeChanged.emit()
+
+        self._com_setup_running = True
+        threading.Thread(
+            target=self._run_com_setup, args=(ps1, ["-Remove"]),
+            daemon=True, name="com-port-remove"
+        ).start()
+
+    def _run_com_setup(self, ps1: Path, script_args: list[str] | None = None) -> None:
+        """Worker thread: spawn PowerShell, wait, restart bridges.
+
+        `script_args` is forwarded to the .ps1 — pass ['-Remove'] to
+        invoke the uninstall path instead of the default install path."""
+        script_args = script_args or []
+        try:
+            log.info("launching %s %s (UAC prompt will appear)",
+                     ps1, ' '.join(script_args))
+            # Pass ANEB_SIM_NONINTERACTIVE so the script skips the
+            # final Read-Host pause that's only useful for the
+            # double-click-from-Explorer path.
+            env = os.environ.copy()
+            env["ANEB_SIM_NONINTERACTIVE"] = "1"
+            result = subprocess.run(
+                ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
+                 "-File", str(ps1), *script_args],
+                env=env, check=False,
+            )
+            log.info("setup_com.ps1 exited with code %d", result.returncode)
+        except Exception as exc:
+            log.error("COM port setup failed: %s", exc)
+        finally:
+            self._com_setup_running = False
+            # Cross-thread: schedule the bridge restart on the Qt event
+            # loop so we don't poke pyserial / Qt signals from the wrong
+            # thread.
+            QTimer.singleShot(0, self._restart_uart_bridges)
+
+    def _restart_uart_bridges(self) -> None:
+        """Stop existing bridges and try to start them again.  Called
+        after setup_com.ps1 finishes (or if the user explicitly hits
+        a refresh button)."""
+        self._uart_bridges.stop()
+        self._start_uart_bridges()
 
     def _pause_bridge(self, chip: str) -> bool:
         """Disconnect this chip's bridge so avrdude can grab the TCP port.

@@ -28,6 +28,19 @@ typedef struct chip {
     bool     running;           /* false until firmware loaded + initialized */
     bool     paused;            /* manual pause via cmd */
 
+    /* Firmware metadata for the UI's chip-info sidebar.  Populated by
+     * chip_load_hex (when the user loads through aneb-sim's own UI),
+     * and tagged "(via avrdude)" by sim_loop on flash_done when the
+     * firmware came in over the STK500 TCP path instead.  Empty until
+     * something has been loaded. */
+    char     hex_path[260];
+    char     hex_name[64];
+
+    /* Cycle of the last chip-stats JSON emit; sim_loop ticks this at
+     * ~1 Hz so the UI gets a periodic refresh of free-RAM and the
+     * hex-name fields above without flooding the protocol channel. */
+    uint64_t last_stat_emit_cycles;
+
     /* Threading: held during avr_run() and any external avr_raise_irq(). */
     pthread_mutex_t avr_lock;
 
@@ -61,9 +74,19 @@ int chip_load_hex(chip_t *c, const char *path);
 
 /*
  * Hard-reset the chip (clears RAM, restarts execution from the reset
- * vector). Firmware in flash is preserved.
+ * vector). Firmware in flash is preserved.  Sets MCUSR.EXTRF=1 so
+ * Optiboot enters its sync-wait loop (avrdude DTR-pulse semantics).
  */
 void chip_reset(chip_t *c);
+
+/*
+ * Reset like chip_reset() but with MCUSR=0 — no EXTRF, no WDRF.
+ * Optiboot's bootloader-vs-app branch reads MCUSR and skips the sync-wait
+ * loop when EXTRF is clear, jumping straight to the application at 0x0000.
+ * Used after a flasher client (avrdude) disconnects to deterministically
+ * transition into the freshly programmed user firmware.
+ */
+void chip_soft_reset(chip_t *c);
 
 /*
  * Run one cycle on the chip. Returns the simavr cpu_state value

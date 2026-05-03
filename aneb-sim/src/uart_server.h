@@ -1,12 +1,20 @@
 /*
  * uart_server.h — per-chip TCP UART server.
  *
- * Exposes each simulated chip's UART as a raw-byte TCP socket on
- * localhost:8600, 8601, ... (one port per chip index).
+ * Exposes each simulated chip's UART as TWO raw-byte TCP sockets on
+ * localhost:
+ *   8600..8604  — flasher port.  Connecting triggers chip_reset (Arduino
+ *                 DTR-pulse emulation) so avrdude can sync with Optiboot.
+ *                 The chip console suppresses its JSON UART events while
+ *                 a flasher client is attached — STK500 traffic is binary
+ *                 garbage that would flood the UI.
+ *   8700..8704  — bridge port.  Passive subscriber: no reset, no JSON
+ *                 suppression.  Used by the aneb-sim UI's UART bridge
+ *                 to forward chip UART to virtual COM ports without
+ *                 disturbing the running firmware on every reconnect.
  *
- * External tools (avrdude net:localhost:860x, PuTTY telnet, pyserial
- * socket://) can connect directly; a Python bridge can optionally
- * bridge those sockets to virtual COM ports (see uart_bridge.py).
+ * Both ports share the same single client slot per chip — a new connect
+ * on either port preempts the previous client.
  *
  * Locking contract:
  *   push_tx()  — called from on_uart_byte() inside avr_lock; safe to take
@@ -23,7 +31,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#define UART_SERVER_BASE_PORT  8600
+#define UART_SERVER_BASE_PORT          8600   /* flasher port */
+#define UART_SERVER_BRIDGE_BASE_PORT   8700   /* bridge / passive port */
 
 /*
  * Initialize listening sockets for `nchips` chips.
@@ -63,13 +72,31 @@ bool uart_server_pop_rx(int idx, uint8_t *out);
 bool uart_server_pop_connect(int idx);
 
 /*
+ * Returns true (once) if a "flasher" client (i.e. a client that kicked the
+ * previous client when it connected — typically avrdude) just disconnected.
+ * The chip thread uses this to trigger a soft reset with MCUSR=0 so Optiboot
+ * exits its sync-wait loop and jumps into the freshly programmed user app.
+ */
+bool uart_server_pop_flash_done(int idx);
+
+/*
  * Cheap atomic check: is a TCP client currently attached to chip `idx`?
- * Used by on_uart_byte to skip the JSON-Lines emit when avrdude or another
- * raw-protocol client is consuming the UART — those bytes are binary
- * STK500 frames, not human-readable, and emitting one event per byte
- * floods the UI's serial console (~10K events during a flash+verify).
  */
 bool uart_server_has_client(int idx);
+
+/*
+ * Returns true only if the currently-attached client kicked a previous
+ * client to grab the slot (i.e. avrdude or another flasher).  Passive
+ * connects into an empty slot (typical bridge reconnect) return false.
+ *
+ * on_uart_byte uses this to suppress the JSON-Lines UART path during a
+ * flash session — STK500 traffic is binary garbage and emitting one
+ * event per byte floods the UI's serial console for ~10 K bytes back
+ * to back.  When a passive bridge is the client, JSON emission stays
+ * on so the user sees UART output in both the aneb-sim chip console
+ * AND any external tool reading the bridge's COM port.
+ */
+bool uart_server_client_is_flasher(int idx);
 
 /*
  * Return the TCP port number for chip `idx`.

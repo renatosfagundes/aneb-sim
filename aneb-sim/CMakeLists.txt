@@ -41,6 +41,27 @@ add_library(i2c_lcd STATIC
 )
 target_include_directories(i2c_lcd PUBLIC src/i2c_lcd)
 
+# ----- Embed Optiboot bootloader as a C string ---------------------------
+# So the engine can pre-load Optiboot into every atmega328p chip on
+# startup without depending on a runtime path lookup. The .hex is read
+# at configure time, each line wrapped in quotes + \n, and emitted into
+# a generated header. Re-run cmake to pick up changes to the .hex file.
+set(OPTIBOOT_HEX_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/firmware/bootloaders/optiboot_atmega328.hex")
+# NO_HEX_CONVERSION is essential: without it CMake's file(STRINGS) sees
+# Intel-hex's pairs of hex digits and helpfully "converts" 24 → '$' etc,
+# corrupting the bootloader image into a parade of single-byte garbage.
+file(STRINGS "${OPTIBOOT_HEX_SRC}" OPTIBOOT_HEX_LINES NO_HEX_CONVERSION)
+set(OPTIBOOT_C_LINES "")
+foreach(_line ${OPTIBOOT_HEX_LINES})
+    string(APPEND OPTIBOOT_C_LINES "    \"${_line}\\n\"\n")
+endforeach()
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/optiboot_data.h.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/generated/optiboot_data.h"
+    @ONLY
+)
+
 # ----- aneb-sim: the engine binary --------------------------------------
 add_executable(aneb-sim
     src/main.c
@@ -60,7 +81,10 @@ target_include_directories(aneb-sim SYSTEM PRIVATE
     third_party/cjson
 )
 
-target_include_directories(aneb-sim PRIVATE src)
+target_include_directories(aneb-sim PRIVATE
+    src
+    ${CMAKE_CURRENT_BINARY_DIR}/generated
+)
 
 target_link_libraries(aneb-sim PRIVATE
     mcp2515

@@ -41,13 +41,13 @@ Item {
             Button {
                 text: mcuConsole.visible ? "Console ▾" : "Console ▸"
                 Layout.preferredHeight: 22 * root._s
-                font.pixelSize: 10 * root._s
+                font.pixelSize: Math.max(12, 14 * root._s)
                 onClicked: mcuConsole.visible = !mcuConsole.visible
             }
             Button {
                 text: mcuPlotter.visible ? "Plot ▾" : "Plot ▸"
                 Layout.preferredHeight: 22 * root._s
-                font.pixelSize: 10 * root._s
+                font.pixelSize: Math.max(12, 14 * root._s)
                 onClicked: mcuPlotter.visible = !mcuPlotter.visible
             }
             Item { Layout.fillWidth: true }

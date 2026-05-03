@@ -28,6 +28,7 @@ external/simavr/examples/
 *.swp
 *~
 .cache/
+.claude/
 
 # OS clutter
 Thumbs.db

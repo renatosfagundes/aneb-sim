@@ -30,6 +30,7 @@ class SimProxy(QObject):
     can_state_event = pyqtSignal(dict)   # {"chip", "tec", "rec", "state", "ts"}
     lcd_event       = pyqtSignal(dict)   # {"chip", "line0", "line1", "ts"}
     log_event       = pyqtSignal(dict)   # {"level", "msg"}
+    chip_stat_event = pyqtSignal(dict)   # {"chip", "hex_name", "hex_path", "free_ram", "ram_size", "sp", "ts"}
     raw_event       = pyqtSignal(dict)   # everything (for diagnostic panels)
     parse_error     = pyqtSignal(str)    # malformed line received
 
@@ -147,6 +148,7 @@ class SimProxy(QObject):
         elif t == "can_state": self.can_state_event.emit(evt)
         elif t == "lcd":       self.lcd_event.emit(evt)
         elif t == "log":       self.log_event.emit(evt)
+        elif t == "chipstat":  self.chip_stat_event.emit(evt)
 
     def _on_finished(self, exit_code: int, _exit_status) -> None:
         # Flush any partial buffer.

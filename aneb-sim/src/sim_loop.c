@@ -150,6 +150,11 @@ static void drain_can_rx(int idx)
 
 /* ----- chip simulation thread ----------------------------------------- */
 
+/* Forward decl: definition is in the IRQ-callbacks block below.  The
+ * chip thread calls this once per step batch to flush rate-limited
+ * UART JSON events when no TCP UART client is attached. */
+static void uart_emit_drain(int idx, chip_t *c);
+
 static void *chip_thread_fn(void *arg)
 {
     int     idx     = (int)(intptr_t)arg;
@@ -173,6 +178,23 @@ static void *chip_thread_fn(void *arg)
                                "chip %s: TCP client connected — chip reset",
                                c->id);
             }
+            pthread_mutex_unlock(&c->avr_lock);
+        }
+
+        /* Flasher (avrdude) just disconnected — soft-reset so Optiboot
+         * jumps into the user app instead of waiting for its own WDT.
+         * Also tag the chip's hex_name since we don't know the file
+         * that avrdude programmed (the engine only sees STK500 bytes). */
+        if (uart_server_pop_flash_done(idx)) {
+            pthread_mutex_lock(&c->avr_lock);
+            if (c->running) {
+                chip_soft_reset(c);
+                c->pace_init = false;
+            }
+            c->hex_path[0] = '\0';
+            snprintf(c->hex_name, sizeof(c->hex_name),
+                     "(uploaded via avrdude)");
+            c->last_stat_emit_cycles = 0;   /* force a stats emit next tick */
             pthread_mutex_unlock(&c->avr_lock);
         }
 
@@ -212,8 +234,31 @@ static void *chip_thread_fn(void *arg)
         }
         pthread_mutex_unlock(&c->avr_lock);
 
-        /* Flush any UART TX bytes that were pushed during the batch. */
+        /* Flush any UART TX bytes that were pushed during the batch.
+         * uart_emit_drain (defined further below) batches buffered bytes
+         * into rate-limited JSON events when no TCP client is attached. */
         uart_server_flush_tx(idx);
+        uart_emit_drain(idx, c);
+
+        /* Periodic chip-info snapshot (≈1 Hz at sim-speed 1×).  Emits
+         * the hex name + free-RAM estimate so the UI's chip-info
+         * sidebar stays current without polling.  Cheap — one fprintf
+         * per chip per second of sim time. */
+        if (c->avr && c->cycles - c->last_stat_emit_cycles >= 16000000ULL) {
+            c->last_stat_emit_cycles = c->cycles;
+            /* SPL = 0x3D, SPH = 0x3E in the AVR's I/O space (mapped at
+             * data + 0x5D / 0x5E because the I/O space sits 0x20 above
+             * data start in the SRAM-style address map). */
+            int sp = c->avr->data[0x5D] | (c->avr->data[0x5E] << 8);
+            int data_start = (int)c->avr->ramend - 2047;  /* atmega328p: 2 KB SRAM */
+            if (data_start < 0x100) data_start = 0x100;
+            int ram_size = (int)c->avr->ramend - data_start + 1;
+            int free_ram = sp - data_start;
+            if (free_ram < 0) free_ram = 0;
+            if (free_ram > ram_size) free_ram = ram_size;
+            proto_emit_chip_stats(c->id, c->hex_name, c->hex_path,
+                                  free_ram, ram_size, sp, c->cycles);
+        }
 
         if (c->running) chip_pace_tick(c);
     }
@@ -276,22 +321,77 @@ static void on_pin_change(struct avr_irq_t *irq, uint32_t value, void *param)
                    ctx->chip->cycles);
 }
 
+/* Per-chip JSON-emit accumulator for UART bytes.  When no TCP client is
+ * attached, on_uart_byte buffers bytes here and chip_thread_fn flushes
+ * them as one JSON event per 10 ms — a single long stream of plotter/
+ * debug-print output otherwise produces 11k events/s and freezes the UI
+ * thread (the avrdude verify path was a known offender; firmware that
+ * keeps spamming UART after a flash hits the same wall while the bridge
+ * is mid-reconnect). */
+typedef struct {
+    uint8_t         buf[256];
+    int             len;
+    struct timespec last_emit;
+} uart_emit_t;
+
+static uart_emit_t g_uart_emit[SIM_MAX_CHIPS];
+
+#define UART_EMIT_INTERVAL_NS  10000000   /* 10 ms */
+
+/* Emit whatever is buffered as a single batched JSON event. */
+static void uart_emit_force(int idx, chip_t *c, struct timespec now)
+{
+    uart_emit_t *e = &g_uart_emit[idx];
+    if (e->len == 0) return;
+    proto_emit_uart(c->id, e->buf, (size_t)e->len, c->cycles);
+    e->len = 0;
+    e->last_emit = now;
+}
+
+/* Drain the buffer if the rate-limit window has elapsed.  Called once per
+ * chip-step batch from chip_thread_fn so trailing bytes after a UART
+ * burst still get to the UI within ~10 ms. */
+static void uart_emit_drain(int idx, chip_t *c)
+{
+    uart_emit_t *e = &g_uart_emit[idx];
+    if (e->len == 0) return;
+
+    struct timespec now;
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    int64_t dt_ns = (int64_t)(now.tv_sec  - e->last_emit.tv_sec ) * 1000000000LL
+                  + (int64_t)(now.tv_nsec - e->last_emit.tv_nsec);
+    if (e->last_emit.tv_sec != 0 && dt_ns < UART_EMIT_INTERVAL_NS) return;
+
+    uart_emit_force(idx, c, now);
+}
+
 static void on_uart_byte(struct avr_irq_t *irq, uint32_t value, void *param)
 {
     (void)irq;
     chip_t *c = (chip_t *)param;
     uint8_t b = (uint8_t)value;
     int idx = (int)(c - g_chips);
-    /* When a TCP client (e.g. avrdude) is attached, the UART bytes are its
-     * binary protocol — emitting one JSON-Lines `uart` event per byte
-     * floods QML's serial console and freezes the UI thread for 10–20 s
-     * during a flash+verify (~10K bytes back-to-back).  Skip the JSON path
-     * while a client is connected; the byte still goes to TCP. */
-    if (!uart_server_has_client(idx))
-        proto_emit_uart(c->id, &b, 1, c->cycles);
-    /* also push into the per-chip TCP UART server TX buffer (flushed after
-     * avr_lock is released in chip_thread_fn) */
+
+    /* Always push to the TCP server TX ring; if a client is attached,
+     * uart_server_flush_tx delivers it.  Otherwise the ring is drained
+     * (and reset on next client connect). */
     uart_server_push_tx(idx, b);
+
+    /* Suppress the JSON-Lines path only while a *flasher* (avrdude) is
+     * the active client — its bytes are STK500 binary, not UART text.
+     * Passive clients (the aneb-sim UI's bridge) get bytes via TCP for
+     * forwarding to COM ports AND the chip's own console window stays
+     * live: the user sees UART in both places at once.  Emission is
+     * still rate-limited to 100 Hz batched by uart_emit_drain. */
+    if (uart_server_client_is_flasher(idx)) return;
+
+    uart_emit_t *e = &g_uart_emit[idx];
+    if (e->len >= (int)sizeof(e->buf)) {
+        struct timespec now;
+        clock_gettime(CLOCK_MONOTONIC, &now);
+        uart_emit_force(idx, c, now);
+    }
+    e->buf[e->len++] = b;
 }
 
 typedef struct {

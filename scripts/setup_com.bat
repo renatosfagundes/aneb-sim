@@ -1,76 +1,32 @@
 @echo off
-REM scripts\setup_com.bat — set up virtual COM port pairs for aneb-sim.
+REM scripts/setup_com.bat — student-friendly entry point for setting up
+REM the COM-port pairs that aneb-sim's UART bridge needs.
 REM
-REM Run ONCE from an Administrator command prompt.  Creates the five
-REM com0com pairs that aneb-sim auto-bridges on launch:
+REM Double-click this file from Explorer (or run it from a terminal).
+REM It will hand off to setup_com.ps1 which does the real work:
 REM
-REM     Chip   bridge owns   user opens
-REM     ----   -----------   ----------
-REM     ECU1   COM10         COM11
-REM     ECU2   COM12         COM13
-REM     ECU3   COM14         COM15
-REM     ECU4   COM16         COM17
-REM     MCU    COM18         COM19
+REM   - elevates to Administrator if needed
+REM   - locates setupc.exe (prefers the bundled signed driver shipped
+REM     in scripts\com0com_signed\, so Windows 10/11 driver-signature
+REM     enforcement doesn't reject the kernel module)
+REM   - creates the five pairs ECU1..ECU4 + MCU as COM10..COM19
+REM   - verifies every pair is healthy in Device Manager AND visible
+REM     to apps via the Ports class
+REM   - prints a precise next-step instruction if anything is wrong
 REM
-REM After running, launch aneb-sim normally.  The bridge auto-attaches
-REM the bridge-side ports; open the user-side port (COM11, COM13, ...)
-REM in Arduino Serial Monitor / PuTTY / Tera Term at 115200 baud.
+REM Optional: pass a custom driver bundle path, e.g.
+REM   setup_com.bat "C:\Users\me\Downloads\com0com\x64"
 
 setlocal
 
-REM Optional first arg: path to a folder containing setupc.exe.  Useful for
-REM Pete Batard's signed driver bundle (extracted to e.g. Downloads\com0com\x64)
-REM since that one's drivers actually load on modern Windows 10/11.
-set "COM0COM_DIR=%~1"
-if not "%COM0COM_DIR%"=="" goto :have_dir
+powershell -NoProfile -ExecutionPolicy Bypass ^
+    -File "%~dp0setup_com.ps1" %*
 
-if exist "%ProgramFiles(x86)%\com0com\setupc.exe" set "COM0COM_DIR=%ProgramFiles(x86)%\com0com"
-if exist "%ProgramFiles%\com0com\setupc.exe"      set "COM0COM_DIR=%ProgramFiles%\com0com"
-
-:have_dir
-if "%COM0COM_DIR%"=="" (
-    echo.
-    echo ERROR: com0com is not installed and no path was supplied.
-    echo.
-    echo Either install from https://sourceforge.net/projects/com0com/
-    echo (check the "use Ports class" checkbox), or pass the path to a
-    echo signed driver bundle, e.g.
-    echo.
-    echo     scripts\setup_com.bat "C:\Users\you\Downloads\com0com\x64"
-    echo.
-    pause
-    exit /b 1
-)
-
-if not exist "%COM0COM_DIR%\setupc.exe" (
-    echo.
-    echo ERROR: setupc.exe not found in %COM0COM_DIR%
-    echo.
-    pause
-    exit /b 1
-)
-
-echo Using setupc in: %COM0COM_DIR%
-echo.
-echo Creating COM-port pairs (this needs Administrator privileges)...
-echo.
-
-REM setupc.exe loads com0com.inf from the CURRENT WORKING DIRECTORY,
-REM not from its own folder.  pushd into the install dir before running
-REM each install so it can find the .inf file.
-pushd "%COM0COM_DIR%"
-
-call setupc.exe install PortName=COM10 PortName=COM11
-call setupc.exe install PortName=COM12 PortName=COM13
-call setupc.exe install PortName=COM14 PortName=COM15
-call setupc.exe install PortName=COM16 PortName=COM17
-call setupc.exe install PortName=COM18 PortName=COM19
-
-popd
-
-echo.
-echo Done.  Open the user-side port at 115200 baud:
-echo     ECU1: COM11    ECU2: COM13    ECU3: COM15    ECU4: COM17    MCU: COM19
+REM Keep the window open so a double-click run leaves output visible
+REM but skip the pause when called programmatically (the Python UI
+REM sets ANEB_SIM_NONINTERACTIVE before invoking).
+if defined ANEB_SIM_NONINTERACTIVE goto :end
 echo.
 pause
+:end
 endlocal

@@ -1,0 +1,20 @@
+/*
+ * optiboot_data.h — auto-generated from
+ *   firmware/bootloaders/optiboot_atmega328.hex
+ * by CMake's configure_file step.  Do not edit by hand: rerun cmake
+ * after replacing the source hex.
+ *
+ * Embedding the bootloader as a C-string-literal lets the engine
+ * pre-load it into every atmega328p chip on startup, so external
+ * tools (avrdude via remote_flasher, the aneb-sim UI's flash button,
+ * a bare CLI) always see a functioning Optiboot ready to receive
+ * STK500 commands — no manual "load Optiboot" step required.
+ */
+#ifndef OPTIBOOT_DATA_H
+#define OPTIBOOT_DATA_H
+
+static const char OPTIBOOT_ATMEGA328P_HEX[] =
+@OPTIBOOT_C_LINES@
+;
+
+#endif

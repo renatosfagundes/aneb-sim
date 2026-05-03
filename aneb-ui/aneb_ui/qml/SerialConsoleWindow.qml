@@ -7,20 +7,21 @@
 // independently of the main board view.
 import QtQuick 2.15
 import QtQuick.Window 2.15
+import "Theme.js" as T
 
 Window {
     id: root
     property string chip:  ""
     property string label: ""
 
-    width:  520
-    height: 340
-    minimumWidth:  320
-    minimumHeight: 180
+    width:  560
+    height: 360
+    minimumWidth:  360
+    minimumHeight: 200
 
     title: (label.length ? label : chip.toUpperCase()) + " — serial console"
     visible: false
-    color: "#061410"
+    color: T.bg
 
     // Position the first time it's shown so all four ECU windows
     // don't pile up on top of each other. Subsequent opens reuse
@@ -36,7 +37,7 @@ Window {
 
     SerialConsole {
         anchors.fill: parent
-        anchors.margins: 0
-        chip: root.chip
+        chip:  root.chip
+        label: root.label
     }
 }

@@ -16,6 +16,18 @@ from PyQt6.QtWidgets import QHBoxLayout, QLineEdit, QPlainTextEdit, QPushButton,
 
 _ANSI_RE = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
 
+# Hard cap on the live console buffer (characters).  Plotter sketches at
+# full UART speed produce ~11 KB/s; without this cap the QPlainTextEdit
+# document grows without bound when the data has no newlines, eventually
+# making each insertText slow enough to freeze the GUI thread.
+#
+# Trim policy is watermark-based: grow to MAX + SLACK, then drop SLACK
+# from the front in one shot.  Trimming on every append after MAX would
+# call removeSelectedText() ~100 times/sec, which is itself O(n) on the
+# document and reintroduces the freeze.
+UART_VIEW_MAX   = 200_000
+UART_VIEW_SLACK = 50_000
+
 
 class SerialConsole(QWidget):
     text_to_send = pyqtSignal(str)   # what the user typed + Enter
@@ -48,10 +60,26 @@ class SerialConsole(QWidget):
 
     def append(self, text: str) -> None:
         clean = _ANSI_RE.sub("", text)
-        # Preserve trailing newline behavior — we don't always get whole lines.
+        if not clean:
+            return
+        # setMaximumBlockCount only evicts when whole BLOCKS are appended,
+        # so a stream without newlines (e.g. continuous Plotter output
+        # before the first "\n") will grow the document forever via
+        # cursor.insertText.  Hard-cap the document by character count
+        # too, trimming from the front when we'd grow past UART_VIEW_MAX.
         cursor = self._view.textCursor()
         cursor.movePosition(cursor.MoveOperation.End)
         cursor.insertText(clean)
+
+        doc = self._view.document()
+        if doc.characterCount() > UART_VIEW_MAX + UART_VIEW_SLACK:
+            trim = doc.characterCount() - UART_VIEW_MAX
+            cursor.movePosition(cursor.MoveOperation.Start)
+            cursor.movePosition(cursor.MoveOperation.NextCharacter,
+                                cursor.MoveMode.KeepAnchor, trim)
+            cursor.removeSelectedText()
+            cursor.movePosition(cursor.MoveOperation.End)
+
         self._view.setTextCursor(cursor)
         self._view.ensureCursorVisible()
 

@@ -288,6 +288,70 @@ Item {
                         }
                     }
 
+                    // Setup-COM-ports button: only shown when no bridge is
+                    // active.  Clicking spawns scripts/setup_com.ps1 (UAC
+                    // prompt will appear); the bridges are restarted
+                    // automatically once the script finishes.  Hidden once
+                    // the bridges are up — at that point the COM badges
+                    // above already prove everything works.
+                    Button {
+                        id: setupComBtn
+                        property bool _busy: false
+                        visible: bridge && Object.keys(bridge.userComPorts).length === 0
+                        text: _busy ? "Setting up… (UAC)" : "Setup COM ports…"
+                        font.pixelSize: 10
+                        enabled: !_busy
+                        ToolTip.visible: hovered
+                        ToolTip.text: "Install com0com pairs (will prompt for admin)."
+                                    + "\nCreates ECU1..ECU4 + MCU as COM10..COM19 with"
+                                    + "\nfriendly names so Serial Monitor / pyserial /"
+                                    + "\nremote_flasher can identify each ECU."
+                        onClicked: {
+                            if (!bridge) return
+                            _busy = true
+                            bridge.installComPorts()
+                        }
+                        // The bridge fires uartBridgeChanged when the
+                        // restart attempt completes — clear the busy
+                        // state so the button can be hidden if bridges
+                        // are now up, or re-tried otherwise.
+                        Connections {
+                            target: bridge
+                            function onUartBridgeChanged() {
+                                setupComBtn._busy = false
+                            }
+                        }
+                    }
+
+                    // Remove-COM-ports button: only shown when at least
+                    // one bridge is active.  Stops the bridges, runs
+                    // setup_com.ps1 -Remove (UAC prompt), then leaves the
+                    // bridges down (the Setup button will appear again).
+                    Button {
+                        id: removeComBtn
+                        property bool _busy: false
+                        visible: bridge && Object.keys(bridge.userComPorts).length > 0
+                        text: _busy ? "Removing… (UAC)" : "Remove…"
+                        font.pixelSize: 10
+                        enabled: !_busy
+                        palette.buttonText: "#cc7777"
+                        ToolTip.visible: hovered
+                        ToolTip.text: "Uninstall the aneb-sim com0com pairs."
+                                    + "\nFrees COM10..COM19; the com0com driver"
+                                    + "\nitself stays installed.  Will prompt for admin."
+                        onClicked: {
+                            if (!bridge) return
+                            _busy = true
+                            bridge.removeComPorts()
+                        }
+                        Connections {
+                            target: bridge
+                            function onUartBridgeChanged() {
+                                removeComBtn._busy = false
+                            }
+                        }
+                    }
+
                     Item { Layout.fillWidth: true }   // trailing flex space
                 }
             }

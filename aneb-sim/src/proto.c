@@ -68,6 +68,26 @@ void proto_emit_pwm(const char *chip, const char *pin_name, double duty, uint64_
     pthread_mutex_unlock(&g_out_mutex);
 }
 
+void proto_emit_chip_stats(const char *chip,
+                           const char *hex_name, const char *hex_path,
+                           int free_ram, int ram_size, int sp,
+                           uint64_t ts)
+{
+    pthread_mutex_lock(&g_out_mutex);
+    fprintf(stdout,
+            "{\"v\":%d,\"t\":\"chipstat\",\"chip\":\"%s\","
+            "\"hex_name\":\"",
+            ANEB_PROTO_VERSION, chip);
+    emit_str(stdout, hex_name ? hex_name : "");
+    fprintf(stdout, "\",\"hex_path\":\"");
+    emit_str(stdout, hex_path ? hex_path : "");
+    fprintf(stdout,
+            "\",\"free_ram\":%d,\"ram_size\":%d,\"sp\":%d,\"ts\":%llu}\n",
+            free_ram, ram_size, sp, (unsigned long long)ts);
+    fflush(stdout);
+    pthread_mutex_unlock(&g_out_mutex);
+}
+
 void proto_emit_uart(const char *chip, const uint8_t *data, size_t len, uint64_t ts)
 {
     pthread_mutex_lock(&g_out_mutex);

@@ -5,20 +5,21 @@
 // once on first show, can be moved/resized/closed independently.
 import QtQuick 2.15
 import QtQuick.Window 2.15
+import "Theme.js" as T
 
 Window {
     id: root
     property string chip:  ""
     property string label: ""
 
-    width:  640
-    height: 360
-    minimumWidth:  400
-    minimumHeight: 240
+    width:  720
+    height: 400
+    minimumWidth:  460
+    minimumHeight: 260
 
     title: (label.length ? label : chip.toUpperCase()) + " — plotter"
     visible: false
-    color: "#0a1612"
+    color: T.bg
 
     property bool _placed: false
     onVisibleChanged: {
@@ -31,8 +32,8 @@ Window {
 
     Plotter {
         anchors.fill: parent
-        anchors.margins: 4
         chip:   root.chip
+        label:  root.label
         active: root.visible
     }
 }
