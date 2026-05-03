@@ -150,6 +150,24 @@ Emitted whenever a `force_busoff`, `can_errors`, or `can_recover` command
 runs against the chip. Future expansion: emit on every threshold crossing
 without a UI poke.
 
+### `chipstat` — periodic chip metadata snapshot
+
+```json
+{"v":1,"t":"chipstat","chip":"ecu1","hex_name":"sketch.ino.hex","hex_path":"C:/.../sketch.ino.hex","free_ram":1832,"ram_size":2048,"sp":2168,"ts":12345}
+```
+
+| Field      | Type   | Notes |
+|------------|--------|-------|
+| `hex_name` | string | Friendly label for what's currently in the chip's flash. `"Optiboot (built-in)"` at boot, the `.hex` basename after `cmd_load`, `"(uploaded via avrdude)"` after a flasher-port disconnect. |
+| `hex_path` | string | Full path on disk if known (set by `cmd_load`); empty after an avrdude flash since the engine only sees STK500 bytes, not a filename. |
+| `free_ram` | int    | Approximate free SRAM in bytes (`SP − data_start`). Equals "stack head-room" for sketches that don't `malloc`; over-counts heap as free otherwise. |
+| `ram_size` | int    | Total SRAM, e.g. 2048 for atmega328p. |
+| `sp`       | int    | Current stack-pointer value (diagnostic). |
+
+Emitted at ≈1 Hz per chip from the chip thread. The UI consumes this for
+its sidebar "Hex / Free RAM" lines; subscribers can throttle further if
+they only care about labels and not memory tracking.
+
 ---
 
 ## Commands (UI → engine)

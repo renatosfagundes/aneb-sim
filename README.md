@@ -6,7 +6,7 @@ Built so students can run the same firmware they would flash to hardware, on the
 
 ## Status
 
-**M0–M4 done.** Engine runs all 5 chips, JSON wire protocol, MCP2515 model with full bus + error state machine, bus-off + recovery. 48 unit tests + 3 Python smokes.
+**M0–M7 done, M9 in progress.** Engine runs all 5 chips, JSON wire protocol, MCP2515 model with full bus + error state machine, bus-off + recovery, full PyQt6/QML UI with per-chip Nano illustrations, LCD, plotter, dashboard.  External avrdude flashing supported via embedded Optiboot + dual-port TCP UART (flasher port `8600+i`, bridge port `8700+i`).  48 unit tests + 3 Python smokes.
 
 - [`docs/DESIGN.md`](docs/DESIGN.md) — architectural rationale (why the code looks the way it does)
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — milestone roadmap + roster
@@ -21,10 +21,14 @@ git clone --recurse-submodules <repo-url> /c/dev/aneb-sim
 cd /c/dev/aneb-sim
 ./scripts/bootstrap.sh    # installs deps, builds simavr
 ./scripts/build.sh        # builds aneb-sim
-./scripts/run.sh firmware/examples/blink.hex
+./scripts/run-ui.sh       # runs the engine + Qt UI
 ```
 
-You should see GPIO pin transitions printed to stdout.
+For external avrdude flashing (e.g. from `remote_flasher`), run
+`scripts/setup_com.bat` once to install com0com virtual COM-port pairs
+named `ECU1 (aneb-sim)` … `MCU (aneb-sim)`.  Tools open the user-side
+port (e.g. COM11 for ECU1) and the aneb-sim UI's bridge forwards bytes
+to/from the simulator's UART socket on `127.0.0.1:8700+i`.
 
 ## Layout
 
