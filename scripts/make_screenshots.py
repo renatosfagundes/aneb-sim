@@ -97,6 +97,120 @@ def _find_qml_objects_with_property(root: QObject, prop: str, value):
     return out
 
 
+def _find_qml_by_class(root, prefix: str, chip: str | None = None):
+    """Walk root.findChildren and return the first QObject whose class
+    name starts with `prefix`, optionally also matching a `chip`
+    property.  Returns None if not found."""
+    if root is None:
+        return None
+    for child in root.findChildren(QObject):
+        try:
+            cn = child.metaObject().className()
+        except Exception:
+            continue
+        if not cn.startswith(prefix):
+            continue
+        if chip is not None:
+            try:
+                if child.property("chip") != chip:
+                    continue
+            except Exception:
+                continue
+        return child
+    return None
+
+
+def _qml_scene_rect(item):
+    """Return the (x, y, w, h) of a QQuickItem in QQuickWindow scene
+    coords, or None if the item isn't laid out yet.
+
+    We read geometry through the QML `width`/`height` properties (which
+    every QQuickItem exposes) and walk parents via `parentItem()` to
+    accumulate the absolute scene position — that's more robust than
+    boundingRect()/mapToScene() across the offscreen render boundary,
+    where some intermediate Item types report a zero bounding rect."""
+    try:
+        wpx = float(item.property("width")  or 0)
+        hpx = float(item.property("height") or 0)
+        if wpx <= 0 or hpx <= 0:
+            return None
+        x = 0.0
+        y = 0.0
+        cur = item
+        while cur is not None:
+            try:
+                cx = float(cur.property("x") or 0)
+                cy = float(cur.property("y") or 0)
+            except Exception:
+                cx = cy = 0.0
+            x += cx
+            y += cy
+            try:
+                cur = cur.parentItem()    # QQuickItem-only; QObject lacks it
+            except Exception:
+                cur = None
+        return (x, y, wpx, hpx)
+    except Exception:
+        return None
+
+
+def _crop_qml_widgets(w, source_label: str) -> None:
+    """Grab the main window once, then for each (file, qml_class[, chip])
+    target crop the corresponding QQuickItem out of the pixmap and save
+    it.  HiDPI scaling on Windows multiplies the captured pixmap by
+    the display scale factor, so we compute the scale dynamically from
+    the pixmap-vs-widget ratio."""
+    from PyQt6.QtCore import QRect
+    pix = w.grab()
+    if pix.isNull():
+        print(f"  WARN: empty grab when cropping from {source_label}",
+              flush=True)
+        return
+    view = w._view
+    scale_x = pix.width()  / max(1, view.width())
+    scale_y = pix.height() / max(1, view.height())
+    root = view.rootObject()
+
+    targets = [
+        ("can_monitor.png",   "CanMonitor",    None),
+        ("can_inject.png",    "CanInject",     None),
+        ("ecu1_panel.png",    "EcuPanel",      "ecu1"),
+        ("mcu_panel.png",     "Mcu",           None),
+        ("ecu1_lcd.png",      "LcdWidget",     "ecu1"),
+    ]
+    for filename, cls, chip in targets:
+        item = _find_qml_by_class(root, cls, chip)
+        if item is None:
+            print(f"  could not locate {cls}"
+                  + (f" for {chip}" if chip else ""), flush=True)
+            continue
+        sr = _qml_scene_rect(item)
+        if sr is None or sr[2] <= 0 or sr[3] <= 0:
+            print(f"  no layout for {cls}"
+                  + (f" for {chip}" if chip else ""), flush=True)
+            continue
+        x  = int(sr[0] * scale_x)
+        y  = int(sr[1] * scale_y)
+        cw = int(sr[2] * scale_x)
+        ch = int(sr[3] * scale_y)
+        # Clip to the pixmap bounds — items can extend past the
+        # visible area when a layout hasn't fully settled.
+        if x < 0: cw += x; x = 0
+        if y < 0: ch += y; y = 0
+        if x + cw > pix.width():  cw = pix.width()  - x
+        if y + ch > pix.height(): ch = pix.height() - y
+        if cw <= 0 or ch <= 0:
+            print(f"  zero-area crop for {cls}", flush=True)
+            continue
+        crop = pix.copy(QRect(x, y, cw, ch))
+        if crop.isNull():
+            print(f"  crop returned null for {cls}", flush=True)
+            continue
+        crop.save(str(OUT / filename))
+        print(f"  saved {filename}  {crop.width()}x{crop.height()}",
+              flush=True)
+
+
 def _toggle_window(view, chip: str, kind: str, visible: bool):
     """Find the QQuickWindow descendant of the EcuPanel for `chip` whose
     class name matches `kind` (one of "console" / "plotter" / "avrdude")
@@ -225,6 +339,55 @@ def pose_serial_uart(w: QmlMainWindow) -> None:
     state.update_uart({"chip": "ecu1", "data": sample})
 
 
+def pose_adc(w: QmlMainWindow) -> None:
+    """Spin the four trim-pots on each ECU to non-zero positions so the
+    Plotter has real ADC values and the trim-pot illustrations on the
+    panels rotate to a non-default angle."""
+    state = w._state
+    presets = {
+        "ecu1": [820, 540, 210, 703],
+        "ecu2": [180, 760, 410, 880],
+        "ecu3": [512, 320, 600, 240],
+        "ecu4": [430, 870, 150, 660],
+    }
+    for chip, vals in presets.items():
+        for ch, v in enumerate(vals):
+            state.update_adc(chip, ch, v)
+
+
+def pose_can_traffic(w: QmlMainWindow) -> None:
+    """Push a handful of CAN frames into the global log so the bottom-
+    right CAN monitor panel has scrolled traffic to display."""
+    state = w._state
+    sample = [
+        ("ecu1", "0x101", 8, "01 02 03 04 05 06 07 08"),
+        ("ecu2", "0x102", 4, "DE AD BE EF"),
+        ("ecu1", "0x100", 2, "CA FE"),
+        ("ecu3", "0x103", 8, "12 34 56 78 9A BC DE F0"),
+        ("ecu4", "0x104", 3, "AA BB CC"),
+        ("ecu1", "0x101", 8, "11 22 33 44 55 66 77 88"),
+        ("ecu2", "0x123", 1, "42"),
+        ("ecu3", "0x103", 8, "00 11 22 33 44 55 66 77"),
+        ("ecu4", "0x200", 6, "01 02 03 04 05 06"),
+        ("ecu1", "0x100", 2, "BA BE"),
+    ]
+    for src, fid, dlc, data in sample:
+        state.update_can_tx({
+            "bus": "can1", "src": src,
+            "id": fid, "ext": False, "rtr": False,
+            "dlc": dlc, "data": data.replace(" ", ""),
+            "ts": 0,
+        })
+
+
+def pose_din_pressed(w: QmlMainWindow) -> None:
+    """Hold DIN1 (PC4) and DIN3 (PB1) pressed on ECU1 so the colored
+    push-buttons render with their lit-up appearance."""
+    state = w._state
+    state.update_pin({"chip": "ecu1", "pin": "PC4", "val": 0})  # pressed=LOW
+    state.update_pin({"chip": "ecu1", "pin": "PB1", "val": 0})
+
+
 def pose_avrdude_log(w: QmlMainWindow, chip: str = "ecu1") -> None:
     """Drive the avrdude pane via the bridge's avrdudeOutput +
     avrdudeStateChanged signals — that's how the real flash flow
@@ -278,8 +441,31 @@ def main() -> int:
     pose_lcd(w)
     _pump(app, 6)
 
-    # 1) Full board view.
+    # 1) Full board view (relatively quiet — chips up, LCD populated,
+    # but no live CAN traffic / button activity).
     grab(w, OUT / "board_main.png")
+
+    # 2) "Active" board — same window, but with ADC spinners turned,
+    # buttons held down, and CAN traffic in the right-side monitor.
+    # This is the shot the manual uses to show what a running session
+    # looks like with everything exercised.
+    pose_adc(w)
+    pose_din_pressed(w)
+    pose_can_traffic(w)
+    _pump(app, 6)
+    grab(w, OUT / "board_active.png")
+
+    # Crop a few useful close-ups out of board_active so the manual
+    # has readable per-feature shots even in a small print column.
+    # We find each target QQuickItem in the QML tree and use its
+    # mapToScene geometry; that auto-adjusts to whatever HiDPI scale
+    # Windows applies to the captured pixmap.
+    try:
+        _crop_qml_widgets(w, "board_active.png")
+    except Exception as e:
+        import traceback
+        print(f"  crop helper failed: {e}", flush=True)
+        traceback.print_exc()
 
     # DEBUG: dump the QML object tree so we can find the EcuPanels.
     root = w._view.rootObject()

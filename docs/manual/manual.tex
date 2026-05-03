@@ -378,10 +378,34 @@ e ao indicador de \emph{engine} (\emph{running} em verde).
 % =================================================================
 \section{Visão geral da interface}
 
+A janela principal mostra a placa inteira simultaneamente: as quatro
+ECUs em \emph{grid} 2$\times$2 à esquerda, o painel MCU à direita,
+mais o injetor e o monitor CAN na coluna direita inferior.  A
+figura abaixo é um \emph{snapshot} típico --- placa em execução,
+LCD com saída do firmware, valores reais de \emph{Free RAM} nas
+barras laterais e tráfego CAN no monitor.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{board_active.png}
+  \caption{Sessão em execução. ECU1 mostra ``SPEED 72 km/h'' no LCD,
+           ECU2 está em \emph{error-passive} (CAN amarelo, TEC=142),
+           potenciômetros das quatro ECUs em ângulos distintos e o
+           monitor CAN à direita lista 10 quadros recentes.}
+\end{figure}
+
 \subsection{Painel ECU}
 
 Cada uma das quatro ECUs ocupa um \emph{card} com a seguinte
 disposição:
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.85\textwidth]{ecu1_panel.png}
+  \caption{Painel da ECU1 em detalhe --- barra lateral à esquerda,
+           Nano + LCD no centro, botões DIN à direita, e LEDs +
+           potenciômetros + buzzer no rodapé.}
+\end{figure}
 
 \begin{itemize}[nosep]
   \item \textbf{Linha de título} (topo): rótulo (\texttt{ECU 1},
@@ -425,6 +449,57 @@ disposição:
 não está conectado ao barramento CAN nem aos periféricos das ECUs,
 seu \emph{card} é mais enxuto: ilustração do Nano, LCD, e dois
 seletores de \emph{modo} (\texttt{Mode 1} D8 / \texttt{Mode 2} D9).
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.7\textwidth]{mcu_panel.png}
+  \caption{Painel do MCU. Os dois seletores \texttt{Mode 1}/\texttt{Mode 2}
+           geram a máquina de estados de quatro modos
+           (\emph{Electric}/\emph{Auto}/\emph{Manual}/\emph{Diag})
+           --- veja o exemplo \texttt{mcu\_mode\_select}.}
+\end{figure}
+
+\subsection{LCD I\textsuperscript{2}C 16$\times$2}
+
+O LCD desenhado abaixo do Nano em cada ECU/MCU é alimentado
+em tempo real pelas instruções TWI do firmware: cada
+\texttt{lcd.print()} no sketch atualiza a representação na UI
+sem polling adicional.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.6\textwidth]{ecu1_lcd.png}
+  \caption{Close-up do LCD com saída do firmware
+           \texttt{dashboard\_full} rodando na ECU1.}
+\end{figure}
+
+\subsection{Monitor + injeção CAN}
+
+A coluna direita inferior tem dois \emph{cards} dedicados ao
+barramento CAN1: um \emph{form} de injeção (envia um \emph{frame}
+arbitrário a partir do PC, identificando-se como \texttt{src=host})
+e um monitor com \emph{scroll} mostrando todos os \emph{frames}
+recentes (limite de 1000 entradas).
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.7\textwidth]{can_inject.png}
+  \caption{Painel de injeção: ID (decimal ou \texttt{0x...}),
+           \emph{flags} \emph{ext}/\emph{rtr}, DLC com $\pm$, e o
+           campo de \emph{data} em hex (DLC$\times$2 caracteres).
+           \emph{Send} dispara um comando \texttt{can\_inject} no
+           engine.}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.85\textwidth]{can_monitor.png}
+  \caption{Monitor CAN com tráfego ao vivo. Cada linha é um
+           \emph{frame} \texttt{can\_tx} emitido por uma das ECUs;
+           o engine entrega os \emph{frames} a todos os outros
+           controladores em ordem de \emph{attach}, e o monitor
+           registra a sequência observada.}
+\end{figure}
 
 \subsection{Toolbar}
 
