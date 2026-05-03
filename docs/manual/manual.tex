@@ -649,7 +649,96 @@ recebe o nome do arquivo via STK500).
 \end{dicabox}
 
 % =================================================================
-% 9. Comandos via JSON-Lines (CLI direta)
+% 9. Exemplos de firmware
+% =================================================================
+\section{Exemplos de firmware}
+
+A pasta \texttt{firmware/examples/} traz \emph{sketches} Arduino que
+exercitam cada periférico da placa em isolamento. Cada um vem
+acompanhado de \texttt{.ino}, \texttt{.hex} pré-compilado (com e sem
+bootloader) e uma \emph{tag} no \texttt{README.md} indicando em qual
+ECU faz mais sentido rodar.
+
+\subsection{Catálogo}
+
+\begin{itemize}[nosep]
+  \item \textbf{blink}: pisca o LED L (D13) a 1\,Hz. Sanidade básica.
+  \item \textbf{io\_test}: \emph{smoke test} que toca em DIN1--4,
+        AIN0--3, DOUT0/1, L e LDR\_LED simultaneamente, exibindo o
+        estado das entradas no LCD.
+  \item \textbf{lcd\_hello}: inicializa o display I\textsuperscript{2}C
+        16$\times$2 a 0x27 e exibe duas linhas com texto deslizante.
+  \item \textbf{buzzer\_tone}: toca um arpejo de C maior na saída
+        BUZZ (PD7) usando \texttt{tone()} / \texttt{noTone()}.
+  \item \textbf{adc\_to\_pwm}: lê AIN0 e modula DOUT0 (PD3) via PWM
+        de forma linear. Plotador mostra os dois sinais paralelos.
+  \item \textbf{button\_counter}: contador de eventos com debounce
+        nos botões DIN1--4 e exibição no LCD; DIN1=$+1$, DIN2=$-1$,
+        DIN3=zera, DIN4=alterna sinal.
+  \item \textbf{serial\_echo}: lê linhas da UART e devolve com
+        prefixo numérico. Útil para validar o caminho bridge $\to$
+        COM virtual em ambos os sentidos.
+  \item \textbf{ldr\_loop} (ECU1): malha óptica fechada --- PWM em
+        PD6 acende o LDR\_LED e o sketch lê o LDR em A0, gerando
+        uma curva de transferência ótica.
+  \item \textbf{loop\_feedback} (ECU2): malha elétrica via D5
+        $\to$ A7 com controlador proporcional simples ($K_P = 0,2$).
+        Alvo alterna entre 30\,\% e 70\,\% a cada 1,5\,s; saída
+        impressa em CSV para o Plotador.
+  \item \textbf{can\_heartbeat}: quatro variantes (ECU1--ECU4) que
+        transmitem um contador na CAN periodicamente. Demonstra
+        comunicação inter-ECU.
+  \item \textbf{can\_busoff\_demo}: reporta TEC/REC/EFLG da MCP2515
+        a 1\,Hz e se recupera automaticamente de \emph{bus-off}.
+        Use junto com a injeção de erros do menu CAN da UI ou o
+        \emph{scenario player} para ver as transições.
+  \item \textbf{mcu\_mode\_select} (MCU): máquina de estados de 4
+        estados (\emph{Electric}, \emph{Auto}, \emph{Manual},
+        \emph{Diag}) controlada pelos seletores D8/D9 do MCU.
+  \item \textbf{kitchen\_sink}: \emph{todos} os periféricos em um
+        sketch só (DOUT, DIN, AIN, PWM, BUZZ, LCD, CAN). Bom para
+        verificar que tudo está plugado depois de uma reinstalação.
+\end{itemize}
+
+\subsection{Compilando}
+
+\begin{lstlisting}[language=bash]
+arduino-cli core install arduino:avr
+arduino-cli lib  install "mcp_can"
+arduino-cli lib  install "LiquidCrystal I2C"
+
+cd firmware/examples
+./build_all.sh
+\end{lstlisting}
+
+O script gera tanto \texttt{<nome>.hex} (sem bootloader, para o caminho
+\texttt{cmd\_load} da UI) quanto \texttt{<nome>\_with\_bootloader.hex}
+(com Optiboot embutido, para uso com \texttt{avrdude} externo). Como o
+\emph{engine} do aneb-sim já pré-carrega Optiboot em \texttt{chip\_init},
+qualquer das duas variantes funciona em qualquer caminho de gravação.
+
+\subsection{Fluxo recomendado de aprendizado}
+
+Para uma turma nova:
+
+\begin{enumerate}[nosep]
+  \item Comece por \textbf{io\_test} --- vai mostrar todos os widgets
+        da UI ao mesmo tempo, dando intimidade com a placa.
+  \item Cada periférico em isolado: \textbf{buzzer\_tone},
+        \textbf{adc\_to\_pwm}, \textbf{button\_counter},
+        \textbf{lcd\_hello}, \textbf{serial\_echo}.
+  \item Conceitos de controle: \textbf{ldr\_loop} (ECU1) e
+        \textbf{loop\_feedback} (ECU2) introduzem leitura analógica
+        + atuação proporcional.
+  \item Comunicação: \textbf{can\_heartbeat} a quatro nós, depois
+        \textbf{can\_busoff\_demo} com injeção de erros para ver
+        bus-off acontecer e ser recuperado.
+  \item \textbf{kitchen\_sink} fecha o ciclo --- combine seu próprio
+        sketch a partir das partes deste.
+\end{enumerate}
+
+% =================================================================
+% 10. Comandos via JSON-Lines (CLI direta)
 % =================================================================
 \section{Controle programático: protocolo JSON-Lines}
 
