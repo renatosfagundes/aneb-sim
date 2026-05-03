@@ -345,13 +345,14 @@ de controle (\textbf{Load}, \textbf{Pause}, \textbf{Resume},
 \textbf{Speed}, \textbf{1$\times$}, \textbf{Max}, \textbf{Dashboard})
 e ao indicador de \emph{engine} (\emph{running} em verde).
 
-% TODO: tela cheia da janela principal --- usar Snipping Tool
-% no aneb-sim já rodando. Salvar como docs/manual/images/board_main.png
-% \begin{figure}[H]
-%   \centering
-%   \includegraphics[width=\textwidth]{board_main.png}
-%   \caption{Janela principal do aneb-sim com as quatro ECUs e o MCU.}
-% \end{figure}
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{board_main.png}
+  \caption{Janela principal do aneb-sim com as quatro ECUs e o MCU.
+           Cada \emph{card} mostra a barra lateral com o status CAN e
+           os metadados do firmware (Hex, Free RAM, COM), a ilustração
+           do Arduino Nano e o LCD.}
+\end{figure}
 
 \subsection{O que acontece ao iniciar}
 
@@ -454,7 +455,7 @@ enviar caracteres de volta ao chip.
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.85\textwidth]{serial_demo.png}
+  \includegraphics[width=0.85\textwidth]{ecu1_console.png}
   \caption{Janela de console serial mostrando saída UART de um sketch
            Plotter Arduino. Cabeçalho com chip badge, contador de bytes,
            LED de atividade RX, botão \emph{Clear} e \emph{toggle}
@@ -504,15 +505,14 @@ O Plotter é uma janela com uma área de gráfico em \emph{rolling
 window} mostrando até 14 sinais simultâneos do chip selecionado.
 Acessível pelo botão \textbf{Plot \textbf{\textgreater{}}}.
 
-% TODO: imagem do plotter --- capturar manualmente do app rodando
-% (Snipping Tool) e salvar em docs/manual/images/plotter.png.
-% Motivo: QtCharts segfauda quando renderizado offscreen via
-% QQuickView (limitação conhecida no PyQt6 do Windows).
-% \begin{figure}[H]
-%   \centering
-%   \includegraphics[width=\textwidth]{plotter.png}
-%   \caption{Plotter com seis traços ativos (ADC0--ADC3 e dois PWM).}
-% \end{figure}
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{ecu1_plotter.png}
+  \caption{Plotter com legenda dos 14 sinais disponíveis. Eixo Y
+           esquerdo (0--1023) para ADCs, eixo Y direito (0,0--1,0)
+           para canais PWM. Janela temporal selecionável (10\,s neste
+           caso) e botão \emph{Pause} no canto superior direito.}
+\end{figure}
 
 \subsection{Cabeçalho}
 
@@ -565,11 +565,13 @@ embutido, carrega o Optiboot empacotado no \emph{engine} e dispara
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.85\textwidth]{avrdude_demo.png}
+  \includegraphics[width=0.85\textwidth]{ecu1_avrdude.png}
   \caption{Janela do \texttt{avrdude} com log colorizado: linhas
            informativas em ciano, \emph{Writing}/\emph{Reading} com
            barra de progresso, \emph{verified}/\emph{Avrdude.EXE done}
-           em verde indicando sucesso.}
+           em verde indicando sucesso. O cabeçalho mostra o status
+           atual (\emph{Success}) e três ações
+           (\emph{Flash again} / \emph{Copy} / \emph{Clear}).}
 \end{figure}
 
 O cabeçalho mostra o status atual (\emph{Idle} / \emph{Flashing\dots} /
