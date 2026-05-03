@@ -1,0 +1,23 @@
+// multi_node_arbitration.jsonl — three ECUs TX same-tick to demonstrate
+// frame ordering on the simulator's CAN bus.
+//
+// The bus model delivers frames in *attach order* when multiple
+// controllers TX in the same tick (see DESIGN.md §4.3).  This
+// scenario triggers that condition explicitly by injecting three
+// CAN frames at the same `at_ms`, with different IDs (low ID =
+// would-win arbitration on real hardware).  In the simulator we
+// see them in the bus event log in attach order, which means a
+// student can compare the model to the textbook arbitration rule.
+//
+// Open Toolbar → CAN monitor before running so the frames are
+// visible in chronological order.
+
+{"v": 1, "at_ms":  500, "c": "can_inject", "bus": "can1", "src": "host", "id": "0x100", "ext": false, "rtr": false, "dlc": 1, "data": "01"}
+{"v": 1, "at_ms":  500, "c": "can_inject", "bus": "can1", "src": "host", "id": "0x123", "ext": false, "rtr": false, "dlc": 1, "data": "02"}
+{"v": 1, "at_ms":  500, "c": "can_inject", "bus": "can1", "src": "host", "id": "0x200", "ext": false, "rtr": false, "dlc": 1, "data": "03"}
+{"v": 1, "at_ms": 1500, "c": "can_inject", "bus": "can1", "src": "host", "id": "0x100", "ext": false, "rtr": false, "dlc": 1, "data": "11"}
+{"v": 1, "at_ms": 1500, "c": "can_inject", "bus": "can1", "src": "host", "id": "0x123", "ext": false, "rtr": false, "dlc": 1, "data": "22"}
+{"v": 1, "at_ms": 1500, "c": "can_inject", "bus": "can1", "src": "host", "id": "0x200", "ext": false, "rtr": false, "dlc": 1, "data": "33"}
+{"v": 1, "at_ms": 2500, "c": "can_inject", "bus": "can1", "src": "host", "id": "0x100", "ext": false, "rtr": false, "dlc": 1, "data": "21"}
+{"v": 1, "at_ms": 2500, "c": "can_inject", "bus": "can1", "src": "host", "id": "0x123", "ext": false, "rtr": false, "dlc": 1, "data": "42"}
+{"v": 1, "at_ms": 2500, "c": "can_inject", "bus": "can1", "src": "host", "id": "0x200", "ext": false, "rtr": false, "dlc": 1, "data": "63"}

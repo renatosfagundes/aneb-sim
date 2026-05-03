@@ -1,0 +1,17 @@
+// busoff_recovery.jsonl — drive ECU2 into bus-off, recover, repeat.
+//
+// Flash can_busoff_demo.hex on ECU2 first (Load ▾ → Load ECU 2…) so
+// the chip is reporting TEC/REC/EFLG over UART; then run this scenario.
+//
+// Timeline (wallclock from script start):
+//   0.5 s   force_busoff on ECU2  (instructor sees state → BUS-OFF)
+//   3.0 s   can_recover  on ECU2  (the firmware also self-recovers)
+//   5.0 s   force_busoff on ECU2  (second cycle)
+//   8.0 s   can_recover  on ECU2
+//
+// Lines starting with `//` or `#` are comments and skipped.
+
+{"v": 1, "at_ms":  500, "c": "force_busoff", "chip": "ecu2"}
+{"v": 1, "at_ms": 3000, "c": "can_recover",  "chip": "ecu2"}
+{"v": 1, "at_ms": 5000, "c": "force_busoff", "chip": "ecu2"}
+{"v": 1, "at_ms": 8000, "c": "can_recover",  "chip": "ecu2"}

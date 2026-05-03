@@ -92,6 +92,8 @@ class SimProxy(QObject):
         self.send_command({"c":"adc", "chip": chip, "ch": ch, "val": val})
     def cmd_pause  (self) -> None: self.send_command({"c":"pause"})
     def cmd_resume (self) -> None: self.send_command({"c":"resume"})
+    def cmd_run_script(self, path: str) -> None:
+        self.send_command({"c": "run_script", "path": path})
     def cmd_can_inject(self, frame_id: int, data_hex: str, *,
                        ext: bool=False, rtr: bool=False, dlc: int=0) -> None:
         self.send_command({

@@ -66,6 +66,7 @@ typedef enum {
     CMD_FORCE_BUSOFF, /* drive an ECU's MCP2515 directly into bus-off */
     CMD_CAN_ERRORS,   /* inject N tx-or-rx error increments on a chip */
     CMD_CAN_RECOVER,  /* clear bus-off + counters on a chip */
+    CMD_RUN_SCRIPT,   /* replay a JSON-Lines scenario file (Phase A) */
 } cmd_type_t;
 
 typedef struct {

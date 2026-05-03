@@ -69,6 +69,7 @@ add_executable(aneb-sim
     src/chip.c
     src/cmd.c
     src/pin_names.c
+    src/script.c
     src/sim_loop.c
     src/uart_server.c
     third_party/cjson/cJSON.c

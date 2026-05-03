@@ -13,6 +13,7 @@
 #include "chip.h"
 #include "mcp2515.h"
 #include "pin_names.h"
+#include "script.h"
 #include "proto.h"
 #include "sim_loop.h"
 
@@ -310,6 +311,14 @@ void cmd_apply(cmd_t *cmd)
     case CMD_FORCE_BUSOFF: apply_force_busoff(cmd); break;
     case CMD_CAN_ERRORS:   apply_can_errors(cmd);   break;
     case CMD_CAN_RECOVER:  apply_can_recover(cmd);  break;
+    case CMD_RUN_SCRIPT:
+        if (cmd->path[0] == '\0') {
+            proto_emit_log("warn", "run_script: missing path");
+        } else if (script_run_async(cmd->path) != 0) {
+            proto_emit_log("warn", "run_script: failed to start '%s'",
+                           cmd->path);
+        }
+        break;
     case CMD_SPEED:        sim_loop_set_speed(cmd->speed); break;
     case CMD_PAUSE:        sim_loop_pause_all();    break;
     case CMD_RESUME:       sim_loop_resume_all();   break;

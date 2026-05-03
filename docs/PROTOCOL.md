@@ -313,6 +313,36 @@ The frame is delivered to every attached controller (subject to that
 controller's filters and mode). Used by the UI ("send a frame from
 outside the sim") and the scenario player.
 
+### `run_script` — replay a JSON-Lines scenario
+
+```json
+{"v":1,"c":"run_script","path":"demos/busoff_recovery.jsonl"}
+```
+
+| Field  | Type   | Notes |
+|--------|--------|-------|
+| `path` | string | File on the engine's filesystem.  Each line is a normal command JSON object plus a leading `"at_ms"` integer that names the offset in milliseconds from script start. |
+
+The engine spawns a detached thread that opens the file and feeds
+each line into the same `cmd_queue_push` path the stdin reader uses
+once `at_ms` ms have elapsed.  Lines starting with `#` or `//` and
+empty lines are skipped.  Multiple scripts can run concurrently;
+they share the same command queue.
+
+Equivalent CLI form (runs once at startup):
+
+```bash
+aneb-sim --script=demos/busoff_recovery.jsonl
+```
+
+Scripts in the bundled `demos/` directory:
+
+| File | Purpose |
+|---|---|
+| `busoff_recovery.jsonl` | Force ECU2 into bus-off twice; recover after each |
+| `tec_climb.jsonl` | Walk ECU3's TEC past the bus-off threshold in 16-step increments |
+| `multi_node_arbitration.jsonl` | Inject same-tick CAN frames with different IDs to illustrate the engine's attach-order delivery |
+
 ---
 
 ## Future events / commands (post-M1)

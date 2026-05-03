@@ -738,7 +738,88 @@ Para uma turma nova:
 \end{enumerate}
 
 % =================================================================
-% 10. Comandos via JSON-Lines (CLI direta)
+% 10. Cenários (JSON-Lines)
+% =================================================================
+\section{Cenários: \emph{teaching aids} reproduzíveis}
+
+A pasta \texttt{demos/} contém arquivos \texttt{.jsonl} que o engine
+sabe replantar via cronograma absoluto. São roteiros para aulas:
+em vez de digitar comandos manualmente, o instrutor seleciona um
+cenário e os chips passam pelos estados encenados.
+
+\subsection{Formato}
+
+Um objeto JSON por linha. O objeto é um comando normal do engine
+(ver \texttt{docs/PROTOCOL.md}) com um campo extra \texttt{at\_ms}
+indicando \emph{quando} (em milissegundos desde o início do script)
+aplicá-lo:
+
+\begin{lstlisting}
+{"v": 1, "at_ms":  500, "c": "force_busoff", "chip": "ecu2"}
+{"v": 1, "at_ms": 3000, "c": "can_recover",  "chip": "ecu2"}
+\end{lstlisting}
+
+Linhas começando com \texttt{\#} ou \texttt{//} são comentários e são
+ignoradas. Linhas em branco também.
+
+\subsection{Catálogo}
+
+\begin{itemize}[nosep]
+  \item \textbf{busoff\_recovery.jsonl}: força ECU2 a entrar em
+        \emph{bus-off} duas vezes e se recuperar. Use junto com
+        \texttt{can\_busoff\_demo.hex} flashado em ECU2 para ver as
+        transições no Console.
+  \item \textbf{tec\_climb.jsonl}: incrementa TEC de ECU3 em 16
+        unidades a cada 500\,ms, atravessando os limiares
+        \emph{active} $\to$ \emph{passive} (TEC=128) e
+        \emph{passive} $\to$ \emph{bus-off} (TEC=256), depois
+        recupera. Curva fica visível no Plotter.
+  \item \textbf{multi\_node\_arbitration.jsonl}: injeta três quadros
+        CAN com IDs diferentes no mesmo \emph{tick}, ilustrando a
+        ordem de entrega do barramento simulado (em ordem de
+        \emph{attach}, não de ID).
+\end{itemize}
+
+\subsection{Como executar}
+
+\textbf{Pela UI}: clique \textbf{Toolbar} $\to$ \textbf{Scenario \textbf{\textgreater{}}} e escolha
+um item do menu. ``Choose .jsonl file...'' abre um diálogo para
+selecionar qualquer arquivo do disco.
+
+\textbf{Pela CLI}: passe \texttt{-{}-script} ao binário do engine ---
+útil para demonstrações automatizadas e \emph{screencasts}:
+
+\begin{lstlisting}[language=bash]
+./build/aneb-sim/aneb-sim.exe \
+    --script=demos/busoff_recovery.jsonl --no-mcu
+\end{lstlisting}
+
+\textbf{Por JSON-Lines}: envie um comando \texttt{run\_script}
+diretamente para a \emph{stdin} do engine:
+
+\begin{lstlisting}
+{"v": 1, "c": "run_script", "path": "demos/busoff_recovery.jsonl"}
+\end{lstlisting}
+
+\subsection{Criando seus próprios cenários}
+
+Use qualquer editor de texto. Recomendações:
+
+\begin{itemize}[nosep]
+  \item \texttt{at\_ms} é \emph{absoluto} a partir do início do
+        script. Se duas linhas têm o mesmo \texttt{at\_ms}, ambas
+        disparam tão próximo quanto o sistema operacional permite
+        (típico em demos de \emph{race} de barramento).
+  \item Se o tempo \texttt{at\_ms} já passou ao chegarmos na linha
+        (por algum atraso de \emph{scheduling}), a linha dispara
+        imediatamente em vez de \emph{retroativamente}.
+  \item Cenários podem ser executados em paralelo --- a fila de
+        comandos é única, então as linhas se intercalam pela ordem
+        cronológica em que ficam prontas.
+\end{itemize}
+
+% =================================================================
+% 11. Comandos via JSON-Lines (CLI direta)
 % =================================================================
 \section{Controle programático: protocolo JSON-Lines}
 

@@ -174,6 +174,45 @@ Item {
 
                     Item { Layout.fillWidth: true }   // pushes status to the right
 
+                    // ---- Scenario dropdown ----------------------------
+                    // Picks a JSON-Lines script under demos/ and replays
+                    // it server-side; teaching aid for canned bus-off /
+                    // TEC-climb / arbitration demos.  See PLAN.md Phase A.
+                    Button {
+                        id: scenarioBtn
+                        text: "Scenario ▾"
+                        font.pixelSize: 13
+                        onClicked: scenarioMenu.popup(scenarioBtn, 0, scenarioBtn.height)
+                        ToolTip.visible: hovered
+                        ToolTip.text: "Replay a canned demo from demos/*.jsonl"
+                        Menu {
+                            id: scenarioMenu
+                            MenuItem {
+                                text: "Bus-off + recover (ECU2)"
+                                onTriggered: {
+                                    if (bridge) bridge.runScript("demos/busoff_recovery.jsonl")
+                                }
+                            }
+                            MenuItem {
+                                text: "TEC climb past bus-off (ECU3)"
+                                onTriggered: {
+                                    if (bridge) bridge.runScript("demos/tec_climb.jsonl")
+                                }
+                            }
+                            MenuItem {
+                                text: "Multi-node CAN arbitration"
+                                onTriggered: {
+                                    if (bridge) bridge.runScript("demos/multi_node_arbitration.jsonl")
+                                }
+                            }
+                            MenuSeparator {}
+                            MenuItem {
+                                text: "Choose .jsonl file…"
+                                onTriggered: { if (bridge) bridge.openScenarioDialog() }
+                            }
+                        }
+                    }
+
                     Button {
                         text: dashboardWindow.visible ? "Dashboard ▾" : "Dashboard ▸"
                         font.pixelSize: 13

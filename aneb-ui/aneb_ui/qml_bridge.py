@@ -416,6 +416,29 @@ class QmlBridge(QObject):
         if path:
             self._proxy.cmd_load(chip, path)
 
+    @pyqtSlot(str)
+    def runScript(self, path: str) -> None:
+        """Send a `run_script` JSON command to the engine.  `path` is
+        usually one of the canned demos under demos/*.jsonl, but any
+        absolute path the engine can fopen() works.  The engine spawns
+        a thread that replays the file event-by-event; commands fire
+        through the same queue stdin uses, so a scenario interleaves
+        cleanly with anything else the user does in the UI."""
+        if path:
+            self._proxy.cmd_run_script(path)
+
+    @pyqtSlot()
+    def openScenarioDialog(self) -> None:
+        """Pick an arbitrary .jsonl from disk and play it.  The default
+        directory is ../demos/ relative to the engine binary so the
+        canned set shows up first."""
+        path, _ = QFileDialog.getOpenFileName(
+            None, "Pick a scenario to replay",
+            "demos", "JSON Lines (*.jsonl);;All files (*.*)"
+        )
+        if path:
+            self._proxy.cmd_run_script(path)
+
     @pyqtSlot()
     def openLoadAllDialog(self) -> None:
         """Flash ECU 1-4 with the same hex file."""

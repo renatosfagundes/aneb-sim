@@ -189,6 +189,7 @@ static cmd_type_t parse_cmd_type(const char *s)
     if (!strcmp(s, "force_busoff")) return CMD_FORCE_BUSOFF;
     if (!strcmp(s, "can_errors"))   return CMD_CAN_ERRORS;
     if (!strcmp(s, "can_recover"))  return CMD_CAN_RECOVER;
+    if (!strcmp(s, "run_script"))   return CMD_RUN_SCRIPT;
     return CMD_UNKNOWN;
 }
 

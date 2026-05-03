@@ -1,0 +1,31 @@
+// tec_climb.jsonl — slowly ramp ECU3's transmit error counter.
+//
+// Each can_errors command increments TEC by `tx` units (and REC by
+// `rx`).  Walking it up in 16-unit steps every 500 ms gives a smooth
+// curve in the Plotter that crosses the active → passive threshold
+// at TEC = 128 and the bus-off threshold at TEC = 256.
+//
+// Flash can_busoff_demo.hex on ECU3 to see the state-transition log
+// in the Console; open Plot ▸ on ECU3 to see TEC/REC if those signals
+// are exposed.
+//
+// Total runtime: ~9 s (16 increments to climb past bus-off + a final
+// recover so the chip is left in a clean state).
+
+{"v": 1, "at_ms":  500, "c": "can_errors", "chip": "ecu3", "tx": 16}
+{"v": 1, "at_ms": 1000, "c": "can_errors", "chip": "ecu3", "tx": 16}
+{"v": 1, "at_ms": 1500, "c": "can_errors", "chip": "ecu3", "tx": 16}
+{"v": 1, "at_ms": 2000, "c": "can_errors", "chip": "ecu3", "tx": 16}
+{"v": 1, "at_ms": 2500, "c": "can_errors", "chip": "ecu3", "tx": 16}
+{"v": 1, "at_ms": 3000, "c": "can_errors", "chip": "ecu3", "tx": 16}
+{"v": 1, "at_ms": 3500, "c": "can_errors", "chip": "ecu3", "tx": 16}
+{"v": 1, "at_ms": 4000, "c": "can_errors", "chip": "ecu3", "tx": 16}
+{"v": 1, "at_ms": 4500, "c": "can_errors", "chip": "ecu3", "tx": 16}
+{"v": 1, "at_ms": 5000, "c": "can_errors", "chip": "ecu3", "tx": 16}
+{"v": 1, "at_ms": 5500, "c": "can_errors", "chip": "ecu3", "tx": 16}
+{"v": 1, "at_ms": 6000, "c": "can_errors", "chip": "ecu3", "tx": 16}
+{"v": 1, "at_ms": 6500, "c": "can_errors", "chip": "ecu3", "tx": 16}
+{"v": 1, "at_ms": 7000, "c": "can_errors", "chip": "ecu3", "tx": 16}
+{"v": 1, "at_ms": 7500, "c": "can_errors", "chip": "ecu3", "tx": 16}
+{"v": 1, "at_ms": 8000, "c": "can_errors", "chip": "ecu3", "tx": 16}
+{"v": 1, "at_ms": 9000, "c": "can_recover","chip": "ecu3"}
